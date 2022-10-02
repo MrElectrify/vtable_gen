@@ -131,7 +131,7 @@ use syn::parse::{Parse, Parser};
 use syn::{
     parse_macro_input, Abi, Attribute, AttributeArgs, BareFnArg, Data, DataStruct, DeriveInput,
     Expr, Field, FieldValue, Fields, FieldsNamed, FnArg, Ident, ItemFn, LitStr, Member, Meta,
-    MetaList, NestedMeta, Pat, PatIdent, PathSegment, ReturnType, Stmt, Type,
+    MetaList, NestedMeta, Pat, PatIdent, PathSegment, ReturnType, Stmt, Type, Visibility,
 };
 
 #[derive(FromMeta)]
@@ -488,8 +488,15 @@ fn gen_vtable_trait(
         quote! {}
     };
 
+    let visibility_export_stmt = match vis {
+        Visibility::Crate(_) | Visibility::Public(_) | Visibility::Restricted(_) => {
+            quote! { #[macro_export] }
+        }
+        _ => quote! { #[allow(unused_macros)] },
+    };
+
     let impl_virtuals_macro = quote! {
-        #[allow(unused_macros)]
+        #visibility_export_stmt
         macro_rules! #impl_virtuals_macro_name {
             ($ty:ty) => {
                 #impl_base_virtuals_macro
@@ -520,7 +527,7 @@ fn gen_vtable_trait(
     };
 
     let impl_vtable_macro = quote! {
-        #[allow(unused_macros)]
+        #visibility_export_stmt
         macro_rules! #impl_vtable_macro_name {
             ($ty:ty) => {
                 #vtable_name {
