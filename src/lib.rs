@@ -125,7 +125,7 @@
 use darling::{FromDeriveInput, FromMeta};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::__private::TokenStream2;
 use syn::parse::{Parse, Parser};
 use syn::{
