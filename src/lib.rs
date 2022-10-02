@@ -236,6 +236,7 @@ impl FromDeriveInput for GenVTableAttributes {
     }
 }
 
+/// Generates a VTable member for a struct, or a trait if the struct is a vtable. See examples.
 #[proc_macro_attribute]
 pub fn gen_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr = parse_macro_input!(attr as AttributeArgs);
@@ -570,6 +571,7 @@ fn gen_vtable_trait(
     }
 }
 
+/// Implements `std::Default` for a struct containing a VTable
 #[proc_macro_derive(DefaultVTable, attributes(gen_vtbl))]
 pub fn default_vtable(input: TokenStream) -> TokenStream {
     let derive_input = parse_macro_input!(input as DeriveInput);
@@ -605,6 +607,7 @@ pub fn default_vtable(input: TokenStream) -> TokenStream {
 
     let res = quote! {
         impl #struct_name {
+            #[doc(hidden)]
             #vis fn __with_vtbl(vtbl: usize) -> Self {
                 Self {
                     #vtbl_initializer,
@@ -632,6 +635,7 @@ struct NewWithVTableAttributes {
     self_type: Option<Type>,
 }
 
+/// Sets the vtable and allows for passthrough of the vtable from further-derived structs.
 #[proc_macro_attribute]
 pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr = parse_macro_input!(attr as AttributeArgs);
@@ -785,6 +789,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
     let res = quote! {
         #[allow(dead_code)]
         #fn_input
+        #[doc(hidden)]
         #hidden_fn
     };
     res.into()
