@@ -125,13 +125,13 @@
 use darling::{FromDeriveInput, FromMeta};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
 use syn::parse::{Parse, Parser};
 use syn::{
-    parse_macro_input, Attribute, AttributeArgs, BareFnArg, Data, DataStruct, DeriveInput, Expr,
-    Field, FieldValue, Fields, FieldsNamed, FnArg, Ident, ItemFn, LitStr, Member, Meta, MetaList,
-    NestedMeta, Pat, PatIdent, PathSegment, ReturnType, Stmt, Type,
+    parse_macro_input, Abi, Attribute, AttributeArgs, BareFnArg, Data, DataStruct, DeriveInput,
+    Expr, Field, FieldValue, Fields, FieldsNamed, FnArg, Ident, ItemFn, LitStr, Member, Meta,
+    MetaList, NestedMeta, Pat, PatIdent, PathSegment, ReturnType, Stmt, Type,
 };
 
 #[derive(FromMeta)]
@@ -389,7 +389,7 @@ fn add_vtable_or_base_field(input: &mut DeriveInput, base_name: Option<&str>, is
 }
 
 fn gen_vtable_trait(
-    input: &DeriveInput,
+    input: &mut DeriveInput,
     struct_name: &str,
     base_name: Option<&str>,
     no_base_trait_impl: bool,
@@ -398,22 +398,26 @@ fn gen_vtable_trait(
     let trait_name = Ident::new(&trait_name, Span::call_site());
     let vis = &input.vis;
 
-    let fields = match &input.data {
-        Data::Struct(stct) => &stct.fields,
+    let fields = match &mut input.data {
+        Data::Struct(stct) => &mut stct.fields,
         _ => panic!("#[derive(GenVTable)] can only be used on a struct!"),
     };
 
     let skip_n = usize::from(base_name.is_some());
     let trait_methods: Vec<(LitStr, &Ident, Vec<&BareFnArg>, TokenStream2)> = fields
-        .iter()
+        .iter_mut()
         .skip(skip_n)
-        .map(|field| match &field.ty {
+        .map(|field| match &mut field.ty {
             Type::BareFn(bare_fn) => {
-                let abi = if let Some(abi) = bare_fn.abi.as_ref().and_then(|abi| abi.name.clone()) {
-                    abi
-                } else {
-                    LitStr::new("C", Span::call_site())
-                };
+                // add `extern "C"` if it is missing
+                if bare_fn.abi.is_none() {
+                    bare_fn.abi = Some(Abi::parse.parse2(quote! { extern "C" }).unwrap());
+                }
+                let abi = bare_fn
+                    .abi
+                    .as_ref()
+                    .and_then(|abi| abi.name.clone())
+                    .unwrap();
                 let name = field.ident.as_ref().expect("Only named fields are allowed");
                 let args: Vec<&BareFnArg> = bare_fn.inputs.iter().collect();
                 let output = match &bare_fn.output {
@@ -549,7 +553,7 @@ fn gen_vtable_trait(
 
     quote! {
         #vis trait #trait_name #inherit_base {
-            #(extern #abi fn #name(#(#args),*) #output)*;
+            #(extern #abi fn #name(#(#args),*) #output;)*
         }
 
         // implement the macro which generates the trait passthrough

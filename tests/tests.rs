@@ -8,7 +8,7 @@ struct Foo {
 
 #[gen_vtable]
 struct FooVTable {
-    foo: extern "C" fn(this: &Foo) -> u32,
+    foo: fn(this: &Foo) -> u32,
 }
 
 impl FooVirtuals for Foo {
