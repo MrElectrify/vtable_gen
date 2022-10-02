@@ -96,6 +96,28 @@
 //! }
 //! ```
 //!
+//! ## Overriding Functions
+//!
+//! Overriding functions is easy. Because all functions are defined in Traits, one can specify for the
+//! compiler to not generate implementations for base struct `Virtuals` with the argument `no_base_trait_impl`
+//! on the VTable (or both for symmetry :)).
+//! Example:
+//!
+//! ```rs
+//! // ...
+//! #[gen_vtable(base = "Foo", no_base_trait_impl)]
+//! struct BarVTable {}
+//!
+//! // ...
+//! impl FooVirtuals for Bar {
+//!     extern "C" fn some_fn(this: &Foo) {
+//!         // ...
+//!     }
+//! }
+//! ```
+//!
+//! The only caveat is you will have to implement *all* base traits.
+//!
 //! # Known Limitations
 //! - `vtable_gen` currently does not support generic structs. This is a trivial addition, however, and
 //! will likely be added in the future
