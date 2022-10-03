@@ -125,13 +125,14 @@
 use darling::{FromDeriveInput, FromMeta};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
 use syn::parse::{Parse, Parser};
 use syn::{
     parse_macro_input, Abi, Attribute, AttributeArgs, BareFnArg, Data, DataStruct, DeriveInput,
-    Expr, Field, FieldValue, Fields, FieldsNamed, FnArg, Ident, ItemFn, LitStr, Member, Meta,
-    MetaList, NestedMeta, Pat, PatIdent, PathSegment, ReturnType, Stmt, Type, Visibility,
+    Expr, ExprStruct, Field, FieldValue, Fields, FieldsNamed, FnArg, Ident, ItemFn, LitStr, Local,
+    Member, Meta, MetaList, NestedMeta, Pat, PatIdent, PathSegment, ReturnType, Stmt, Type,
+    Visibility,
 };
 
 #[derive(FromMeta)]
@@ -148,8 +149,7 @@ impl FromDeriveInput for GenVTableAttributes {
         let mut __errors = darling::Error::accumulator();
         let mut base: (bool, Option<Option<Type>>) = (false, None);
         let mut no_base_trait_impl: (bool, Option<bool>) = (false, None);
-        use ::darling::ToTokens;
-        let mut __fwd_attrs: Vec<syn::Attribute> = Vec::new();
+        let mut __fwd_attrs: Vec<Attribute> = Vec::new();
         for __attr in &__di.attrs {
             match ::darling::export::ToString::to_string(&__attr.path.clone().into_token_stream())
                 .as_str()
@@ -689,15 +689,63 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
         .inputs
         .insert(0, FnArg::parse.parse2(quote! { vtbl: usize }).unwrap());
 
-    // the last statement will be the return statement, verify that
-    let return_stmt = hidden_fn
+    // the last statement will be the return statement, grab either the struct def or ref
+    let stct_statement = match hidden_fn
         .block
         .stmts
-        .last_mut()
-        .expect("An empty `new` function is not allowed");
-    let return_stmt = match return_stmt {
-        Stmt::Expr(Expr::Struct(stct)) => stct,
-        _ => panic!("The last statement in `new` must be an expression"),
+        .last()
+        .expect("An empty `new` function is not allowed")
+        .clone()
+    {
+        Stmt::Expr(Expr::Struct(_)) => match hidden_fn
+            .block
+            .stmts
+            .last_mut()
+            .expect("An empty `new` function is not allowed")
+        {
+            Stmt::Expr(Expr::Struct(stct)) => stct,
+            _ => unreachable!(),
+        },
+        Stmt::Expr(Expr::Path(path)) => {
+            // we need to track down where the path was instantiated
+            match hidden_fn
+                .block
+                .stmts
+                .iter_mut()
+                .find(|stmt| match stmt {
+                    Stmt::Local(Local {
+                        pat: Pat::Ident(pat_ident),
+                        init: Some(init),
+                        ..
+                    }) => {
+                        path.path
+                            .get_ident()
+                            .map(|path_ident| path_ident == &pat_ident.ident)
+                            .unwrap_or(false)
+                            && match &*init.1 {
+                                Expr::Struct(ExprStruct { path, .. }) => path
+                                    .get_ident()
+                                    .map(|type_ident| {
+                                        type_ident == "Self" || type_ident == struct_name
+                                    })
+                                    .unwrap_or(false),
+                                _ => false,
+                            }
+                    }
+                    _ => false,
+                })
+                .expect("Definition for the return statement was not found")
+            {
+                Stmt::Local(Local {
+                    init: Some(init), ..
+                }) => match &mut *init.1 {
+                    Expr::Struct(stct) => stct,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            }
+        }
+        _ => panic!("The last statement in `new` must be an expression returning the new instance"),
     };
 
     // now the last scenario is can be a few possibilities:
@@ -710,12 +758,16 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
 
     if let Some(base) = &attr.base {
         // see if we can find the initialization
-        if return_stmt.fields.iter().any(|field| match &field.member {
-            Member::Named(ident) => ident == "base_with_vtbl",
-            _ => panic!("#[new_with_vtable] can only be used on a struct with named fields!"),
-        }) {
+        if stct_statement
+            .fields
+            .iter()
+            .any(|field| match &field.member {
+                Member::Named(ident) => ident == "base_with_vtbl",
+                _ => panic!("#[new_with_vtable] can only be used on a struct with named fields!"),
+            })
+        {
             // TODO: figure out how to get rid of this duplicate here, and avoid borrowing twice
-            let init = return_stmt
+            let init = stct_statement
                 .fields
                 .iter_mut()
                 .find(|field| match &field.member {
@@ -750,7 +802,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
             }
         } else {
             // they aren't explicitly instantiating. generate a call to `__with_vtbl`
-            return_stmt.fields.insert(
+            stct_statement.fields.insert(
                 0,
                 FieldValue::parse
                     .parse2(quote! { base_with_vtbl: #base::__with_vtbl(vtbl) })
@@ -759,15 +811,19 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
         }
     } else {
         // ensure they didn't manually set it, that's not supported
-        if return_stmt.fields.iter().any(|field| match &field.member {
-            Member::Named(ident) => ident == "vtbl",
-            _ => panic!("#[new_with_vtable] can only be used on a struct with named fields!"),
-        }) {
+        if stct_statement
+            .fields
+            .iter()
+            .any(|field| match &field.member {
+                Member::Named(ident) => ident == "vtbl",
+                _ => panic!("#[new_with_vtable] can only be used on a struct with named fields!"),
+            })
+        {
             panic!("Manually setting the `vtbl` field is unsupported!");
         }
 
         // add the field
-        return_stmt
+        stct_statement
             .fields
             .insert(0, FieldValue::parse.parse2(quote! { vtbl }).unwrap());
     }
