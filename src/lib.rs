@@ -610,8 +610,7 @@ fn gen_vtable_trait(
     let unimpl_impl = if unimpl {
         quote! {
             impl #trait_name for #struct_name {
-                #[allow(unused_variables)]
-                #(extern #abi fn #name(#(#args),*) #output { unimplemented!() })*
+                #(#[allow(unused_variables)] extern #abi fn #name(#(#args),*) #output { unimplemented!() })*
             }
         }
     } else {
