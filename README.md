@@ -115,6 +115,21 @@ impl FooVirtuals for Bar {
 
 The only caveat is you will have to implement *all* base traits.
 
+## Automatic Implementation
+
+For an automatic implementation, in the case of some abstract struct for example, simply supply `unimpl`
+as an argument to `gen_vtable`, and all methods will be implemented with `unimplemented!()`. Example:
+
+```rs
+// ...
+#[gen_vtable(unimpl)]
+struct Foo {}
+#[gen_vtable(unimpl)]
+struct FooVTable {}
+
+// `FooVirtuals` is implemented for `Foo`
+```
+
 # Known Limitations
 - `vtable_gen` currently does not support generic structs. This is a trivial addition, however, and
 will likely be added in the future
