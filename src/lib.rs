@@ -141,6 +141,8 @@ struct GenVTableAttributes {
     base: Option<Type>,
     #[darling(default)]
     no_base_trait_impl: bool,
+    #[darling(default)]
+    unimpl: bool,
 }
 
 // to make it work
@@ -149,6 +151,7 @@ impl FromDeriveInput for GenVTableAttributes {
         let mut __errors = darling::Error::accumulator();
         let mut base: (bool, Option<Option<Type>>) = (false, None);
         let mut no_base_trait_impl: (bool, Option<bool>) = (false, None);
+        let mut unimpl: (bool, Option<bool>) = (false, None);
         let mut __fwd_attrs: Vec<Attribute> = Vec::new();
         for __attr in &__di.attrs {
             match ::darling::export::ToString::to_string(&__attr.path.clone().into_token_stream())
@@ -202,11 +205,28 @@ impl FromDeriveInput for GenVTableAttributes {
                                             );
                                         }
                                     }
+                                    "unimpl" => {
+                                        if !unimpl.0 {
+                                            unimpl = (
+                                                true,
+                                                __errors.handle(
+                                                    FromMeta::from_meta(__inner).map_err(|e| {
+                                                        e.with_span(&__inner).at("unimpl")
+                                                    }),
+                                                ),
+                                            );
+                                        } else {
+                                            __errors.push(
+                                                darling::Error::duplicate_field("unimpl")
+                                                    .with_span(&__inner),
+                                            );
+                                        }
+                                    }
                                     __other => {
                                         __errors.push(
                                             darling::Error::unknown_field_with_alts(
                                                 __other,
-                                                &["base", "no_base_trait_impl"],
+                                                &["base", "no_base_trait_impl", "unimpl"],
                                             )
                                             .with_span(__inner),
                                         );
@@ -229,6 +249,10 @@ impl FromDeriveInput for GenVTableAttributes {
                 None => ::darling::export::Default::default(),
             },
             no_base_trait_impl: match no_base_trait_impl.1 {
+                Some(__val) => __val,
+                None => ::darling::export::Default::default(),
+            },
+            unimpl: match unimpl.1 {
                 Some(__val) => __val,
                 None => ::darling::export::Default::default(),
             },
@@ -265,7 +289,7 @@ pub fn gen_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
 
     // only generate for vtables
     let gen = if is_vtable {
-        gen_vtable_impl(&mut input, &attr, struct_name, base_name)
+        gen_vtable_impl(&mut input, &attr, struct_name, base_name, attr.unimpl)
     } else {
         // simply add the "base" member
         add_vtable_or_base_field(&mut input, base_name, false);
@@ -321,10 +345,17 @@ fn gen_vtable_impl(
     attr: &GenVTableAttributes,
     struct_name: &str,
     base_name: Option<&str>,
+    unimpl: bool,
 ) -> TokenStream2 {
     add_vtable_or_base_field(input, base_name, true);
 
-    let trait_impl = gen_vtable_trait(input, struct_name, base_name, attr.no_base_trait_impl);
+    let trait_impl = gen_vtable_trait(
+        input,
+        struct_name,
+        base_name,
+        attr.no_base_trait_impl,
+        unimpl,
+    );
 
     quote! {
         #trait_impl
@@ -394,6 +425,7 @@ fn gen_vtable_trait(
     struct_name: &str,
     base_name: Option<&str>,
     no_base_trait_impl: bool,
+    unimpl: bool,
 ) -> TokenStream2 {
     let trait_name = String::from(struct_name) + "Virtuals";
     let trait_name = Ident::new(&trait_name, Span::call_site());
@@ -559,6 +591,17 @@ fn gen_vtable_trait(
         quote! {}
     };
 
+    // implement `unimplemented` if requested
+    let unimpl_impl = if unimpl {
+        quote! {
+            impl #trait_name for #struct_name {
+                #(extern #abi fn #name(#(#args),*) #output { unimplemented!() })*
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #vis trait #trait_name #inherit_base {
             #(extern #abi fn #name(#(#args),*) #output;)*
@@ -575,6 +618,9 @@ fn gen_vtable_trait(
 
         // implement the base trait, if required
         #base_trait_impl
+
+        // implement the unimplemented defaults, if requested
+        #unimpl_impl
     }
 }
 
