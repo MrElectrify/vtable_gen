@@ -2,7 +2,7 @@
 name = "vtable_gen"
 authors = ["Andrew Buck"]
 description = "A C++-ABI VTable Generator for Rust"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 readme = "README.md"

@@ -140,7 +140,7 @@
 use darling::{FromDeriveInput, FromMeta};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::__private::TokenStream2;
 use syn::parse::{Parse, Parser};
 use syn::{
@@ -158,6 +158,8 @@ struct GenVTableAttributes {
     no_base_trait_impl: bool,
     #[darling(default)]
     unimpl: bool,
+    #[darling(default)]
+    no_helper: bool,
 }
 
 // to make it work
@@ -167,6 +169,8 @@ impl FromDeriveInput for GenVTableAttributes {
         let mut base: (bool, Option<Option<Type>>) = (false, None);
         let mut no_base_trait_impl: (bool, Option<bool>) = (false, None);
         let mut unimpl: (bool, Option<bool>) = (false, None);
+        let mut no_helper: (bool, Option<bool>) = (false, None);
+        use darling::ToTokens;
         let mut __fwd_attrs: Vec<Attribute> = Vec::new();
         for __attr in &__di.attrs {
             match ::darling::export::ToString::to_string(&__attr.path.clone().into_token_stream())
@@ -237,11 +241,33 @@ impl FromDeriveInput for GenVTableAttributes {
                                             );
                                         }
                                     }
+                                    "no_helper" => {
+                                        if !no_helper.0 {
+                                            no_helper = (
+                                                true,
+                                                __errors.handle(
+                                                    FromMeta::from_meta(__inner).map_err(|e| {
+                                                        e.with_span(&__inner).at("no_helper")
+                                                    }),
+                                                ),
+                                            );
+                                        } else {
+                                            __errors.push(
+                                                ::darling::Error::duplicate_field("no_helper")
+                                                    .with_span(&__inner),
+                                            );
+                                        }
+                                    }
                                     __other => {
                                         __errors.push(
                                             darling::Error::unknown_field_with_alts(
                                                 __other,
-                                                &["base", "no_base_trait_impl", "unimpl"],
+                                                &[
+                                                    "base",
+                                                    "no_base_trait_impl",
+                                                    "unimpl",
+                                                    "no_helper",
+                                                ],
                                             )
                                             .with_span(__inner),
                                         );
@@ -268,6 +294,10 @@ impl FromDeriveInput for GenVTableAttributes {
                 None => ::darling::export::Default::default(),
             },
             unimpl: match unimpl.1 {
+                Some(__val) => __val,
+                None => ::darling::export::Default::default(),
+            },
+            no_helper: match no_helper.1 {
                 Some(__val) => __val,
                 None => ::darling::export::Default::default(),
             },
@@ -308,7 +338,11 @@ pub fn gen_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
     } else {
         // simply add the "base" member
         add_vtable_or_base_field(&mut input, base_name, false);
-        gen_vtable_helper(struct_name, base_name)
+        if !attr.no_helper {
+            gen_vtable_helper(struct_name, base_name)
+        } else {
+            quote! {}
+        }
     };
 
     let res = quote! {
