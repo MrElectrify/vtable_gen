@@ -308,8 +308,9 @@ pub fn gen_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
     } else {
         // simply add the "base" member
         add_vtable_or_base_field(&mut input, base_name, false);
-        quote! {}
+        gen_vtable_helper(struct_name, base_name)
     };
+
     let res = quote! {
         #input
         #gen
@@ -432,6 +433,27 @@ fn add_vtable_or_base_field(input: &mut DeriveInput, base_name: Option<&str>, is
             }
         }
         _ => panic!("#[derive(GenVTable)] can only be used on a struct with named fields!"),
+    }
+}
+
+fn gen_vtable_helper(struct_name: &str, base_name: Option<&str>) -> TokenStream2 {
+    let vtable_name = String::from(struct_name) + "VTable";
+    let vtable_name = Ident::new(&vtable_name, Span::call_site());
+
+    let struct_name = Ident::new(struct_name, Span::call_site());
+
+    let vtbl = if base_name.is_some() {
+        quote! { self.base_with_vtbl.vtbl() }
+    } else {
+        quote! { self.vtbl }
+    };
+
+    quote! {
+        impl #struct_name {
+            pub fn vtbl(&self) -> &'static #vtable_name {
+                unsafe { ::std::mem::transmute(#vtbl) }
+            }
+        }
     }
 }
 

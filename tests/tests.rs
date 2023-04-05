@@ -8,7 +8,7 @@ struct Foo {
 
 #[gen_vtable]
 struct FooVTable {
-    foo: fn(this: &Foo) -> u32,
+    foo: unsafe extern "C" fn(this: &Foo) -> u32,
 }
 
 impl FooVirtuals for Foo {
@@ -32,7 +32,7 @@ impl Bar {
 
 #[gen_vtable(base = "Foo")]
 struct BarVTable {
-    bar: extern "C" fn(this: &Foo) -> u32,
+    bar: unsafe extern "C" fn(this: &Foo) -> u32,
 }
 
 impl BarVirtuals for Bar {
@@ -59,7 +59,7 @@ impl Baz {
 
 #[gen_vtable(base = "Bar", no_base_trait_impl)]
 struct BazVTable {
-    baz: extern "C" fn(this: &Foo) -> u32,
+    baz: unsafe extern "C" fn(this: &Foo) -> u32,
 }
 
 impl FooVirtuals for Baz {
@@ -103,21 +103,15 @@ fn layout() {
 fn basic_foo() {
     let f = Foo::default();
 
-    assert_eq!(unsafe { *(f.vtbl as *const fn(&Foo) -> u32) }(&f), 0);
+    assert_eq!(unsafe { (f.vtbl().foo)(&f) }, 0);
 }
 
 #[test]
 fn basic_bar() {
     let b = Bar::default();
 
-    assert_eq!(
-        unsafe { *(b.base_with_vtbl.vtbl as *const fn(&Foo) -> u32) }(&b.base_with_vtbl),
-        0
-    );
-    assert_eq!(
-        unsafe { *(b.base_with_vtbl.vtbl as *const fn(&Foo) -> u32).add(1) }(&b.base_with_vtbl),
-        2
-    );
+    assert_eq!(unsafe { (b.vtbl().base.foo)(&b.base_with_vtbl) }, 0);
+    assert_eq!(unsafe { (b.vtbl().bar)(&b.base_with_vtbl) }, 2);
 }
 
 #[test]
@@ -125,21 +119,15 @@ fn basic_baz() {
     let b = Baz::new(5);
 
     assert_eq!(
-        unsafe { *(b.base_with_vtbl.base_with_vtbl.vtbl as *const fn(&Foo) -> u32) }(
-            &b.base_with_vtbl.base_with_vtbl
-        ),
+        unsafe { (b.vtbl().base.base.foo)(&b.base_with_vtbl.base_with_vtbl) },
         1
     );
     assert_eq!(
-        unsafe { *(b.base_with_vtbl.base_with_vtbl.vtbl as *const fn(&Foo) -> u32).add(1) }(
-            &b.base_with_vtbl.base_with_vtbl
-        ),
+        unsafe { (b.vtbl().base.bar)(&b.base_with_vtbl.base_with_vtbl) },
         3
     );
     assert_eq!(
-        unsafe { *(b.base_with_vtbl.base_with_vtbl.vtbl as *const fn(&Foo) -> u32).add(2) }(
-            &b.base_with_vtbl.base_with_vtbl
-        ),
+        unsafe { (b.vtbl().baz)(&b.base_with_vtbl.base_with_vtbl) },
         4
     );
 }
