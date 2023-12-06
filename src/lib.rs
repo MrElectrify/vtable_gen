@@ -80,7 +80,7 @@
 //! ```
 //!
 //! If there is a base struct that requires its `new` function to be called, you will have to also
-//! explicitly initialize a `base_with_vtbl` member with the `new` constructor of the child type.
+//! explicitly initialize a `base_with_vtable` member with the `new` constructor of the child type.
 //! For example:
 //!
 //! ```rs
@@ -435,7 +435,7 @@ fn add_vtable_or_base_field(input: &mut DeriveInput, base_name: Option<&str>, is
             unreachable!()
         }
     } else if base_name.is_some() {
-        "base_with_vtbl"
+        "base_with_vtable"
     } else {
         "vtbl"
     };
@@ -477,7 +477,7 @@ fn gen_vtable_helper(struct_name: &str, base_name: Option<&str>) -> TokenStream2
     let struct_name = Ident::new(struct_name, Span::call_site());
 
     let vtbl = if base_name.is_some() {
-        quote! { self.base_with_vtbl.vtbl() }
+        quote! { self.base_with_vtable.vtbl() }
     } else {
         quote! { self.vtbl }
     };
@@ -724,7 +724,7 @@ pub fn default_vtable(input: TokenStream) -> TokenStream {
             _ => panic!("Base structs must be a name!"),
         };
 
-        quote! { base_with_vtbl: #base_name::__with_vtbl(vtbl) }
+        quote! { base_with_vtable: #base_name::__with_vtbl(vtbl) }
     } else {
         quote! { vtbl }
     };
@@ -879,7 +879,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
             .fields
             .iter()
             .any(|field| match &field.member {
-                Member::Named(ident) => ident == "base_with_vtbl",
+                Member::Named(ident) => ident == "base_with_vtable",
                 _ => panic!("#[new_with_vtable] can only be used on a struct with named fields!"),
             })
         {
@@ -888,7 +888,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
                 .fields
                 .iter_mut()
                 .find(|field| match &field.member {
-                    Member::Named(ident) => ident == "base_with_vtbl",
+                    Member::Named(ident) => ident == "base_with_vtable",
                     _ => {
                         panic!("#[new_with_vtable] can only be used on a struct with named fields!")
                     }
@@ -903,7 +903,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
                             *path.path.segments.last_mut().unwrap() = PathSegment::parse.parse2(quote!{ __new }).unwrap();
                         }
                         _ => panic!(
-                            "Manually initializing `base_with_vtbl` requires a call to `Base::new`. If the \
+                            "Manually initializing `base_with_vtable` requires a call to `Base::new`. If the \
                             intention is to default the value, simply leave it out"
                         ),
                     }
@@ -913,7 +913,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
                         .insert(0, Expr::parse.parse2(quote! { vtbl }).unwrap());
                 }
                 _ => panic!(
-                    "Manually initializing `base_with_vtbl` requires a call to `Base::new`. If the \
+                    "Manually initializing `base_with_vtable` requires a call to `Base::new`. If the \
                     intention is to default the value, simply leave it out"
                 ),
             }
@@ -922,7 +922,7 @@ pub fn new_with_vtable(attr: TokenStream, input: TokenStream) -> TokenStream {
             stct_statement.fields.insert(
                 0,
                 FieldValue::parse
-                    .parse2(quote! { base_with_vtbl: #base::__with_vtbl(vtbl) })
+                    .parse2(quote! { base_with_vtable: #base::__with_vtbl(vtbl) })
                     .unwrap(),
             );
         }
