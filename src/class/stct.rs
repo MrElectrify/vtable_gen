@@ -1,15 +1,20 @@
 use convert_case::{Case, Casing};
+use itertools::Itertools;
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Field, FieldMutability, ItemStruct, Meta, parse_quote, Token, Type, Visibility,
+    Attribute, Field, FieldMutability, File, ItemImpl, Meta, parse_quote, Token, Type, Visibility,
 };
 use syn::punctuated::Punctuated;
 
+use crate::class::vtable::make_vtable_static;
 use crate::parse::ItemClass;
 
 /// Generates the base structure.
-pub fn gen_struct(class: &ItemClass) -> ItemStruct {
+pub fn gen_struct(class: &ItemClass) -> File {
     let mut attrs = class.attrs.clone();
+
+    let default_impl = intercept_default(class, &mut attrs);
+
     let vis = &class.vis;
     let ident = &class.ident;
     let generics = &class.generics;
@@ -67,6 +72,8 @@ pub fn gen_struct(class: &ItemClass) -> ItemStruct {
             #vis struct #ident #generics {
                 #fields
             }
+
+            #default_impl
         }
         .into(),
     )
@@ -74,7 +81,7 @@ pub fn gen_struct(class: &ItemClass) -> ItemStruct {
 }
 
 /// Checks an attribute list for `repr(C)`
-pub fn has_repr_c(attrs: &[Attribute]) -> bool {
+fn has_repr_c(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
         if !attr.path().is_ident("repr") {
             return false;
@@ -87,4 +94,62 @@ pub fn has_repr_c(attrs: &[Attribute]) -> bool {
 
         nested.iter().any(|meta| meta.path().is_ident("C"))
     })
+}
+
+/// Intercepts `#[derive(Default)]` and implements it ourselves
+fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<ItemImpl> {
+    // see if there's a `derive` attribute
+    let derive_attr = attrs
+        .iter_mut()
+        .find(|attr| attr.path().is_ident("derive"))?;
+
+    // find `Default`
+    let meta = derive_attr
+        .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+        .expect("Failed to parse repr");
+
+    // remove it... maybe someday we'll be able to do this
+    let default_idx = meta
+        .iter()
+        .position(|meta| meta.path().is_ident("Default"))?;
+
+    let mut new_meta = Punctuated::<Meta, Token![,]>::new();
+    for (idx, meta) in meta.into_iter().enumerate() {
+        if idx == default_idx {
+            continue;
+        }
+
+        new_meta.push(meta);
+    }
+
+    // replace the old meta
+    derive_attr.meta = parse_quote!(derive(#new_meta));
+
+    // generate the implementation
+    let arg_names = class
+        .body
+        .fields
+        .iter()
+        .filter_map(|field| field.ident.as_ref())
+        .collect_vec();
+
+    let ident = &class.ident;
+    let vtable_static_ident = make_vtable_static(&class.ident);
+
+    Some(
+        syn::parse(
+            quote! {
+                impl Default for #ident {
+                    fn default() -> Self {
+                        Self {
+                            vfptr: &#vtable_static_ident as *const _ as usize,
+                            #(#arg_names: Default::default()),*
+                        }
+                    }
+                }
+            }
+            .into(),
+        )
+        .expect("failed to generate default implementation"),
+    )
 }

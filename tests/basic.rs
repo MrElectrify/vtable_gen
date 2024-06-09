@@ -1,7 +1,7 @@
 use vtable_gen::cpp_class;
 
 cpp_class! {
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     struct Foo {
         a: f32,
 
@@ -48,4 +48,14 @@ fn unimpl_method() {
 
     // ensure that unimplemented methods panic
     (unsafe { &*(b.vfptr as *const FooVTable) }.unimpl_0)()
+}
+
+#[test]
+fn default() {
+    let b = Foo::default();
+
+    // manually select the implementation
+    assert_eq!(<Foo as FooVirtuals>::func(&b, 1, 2.0), 3);
+    // call through the vtable
+    assert_eq!(b.func(1, 2.0), 3);
 }
