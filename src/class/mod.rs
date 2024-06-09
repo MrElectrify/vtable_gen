@@ -4,6 +4,7 @@ use syn::{FnArg, parse_macro_input, parse_quote, PatType};
 use crate::parse::{CppDef, ItemClass};
 
 mod bridge;
+mod imp;
 mod stct;
 mod trt;
 mod vtable;
@@ -27,8 +28,12 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     // generate the VTable structure
     let vtable = vtable::gen_vtable(&def.class);
 
+    // generate implementation hooks
+    let impl_hooks = imp::gen_hooks(&def);
+
     let output = quote! {
         #stct
+        #impl_hooks
         #trt
         #vtable
         #bridge

@@ -7,6 +7,13 @@ cpp_class! {
 
         virtual(1) extern "fastcall" fn func(&self, a: u32, b: f32) -> usize,
     }
+
+    impl Foo {
+        /// Creates a new `Foo`.
+        fn new(a: f32) -> Self {
+            Self { a }
+        }
+    }
 }
 
 impl FooVirtuals for Foo {
@@ -26,22 +33,19 @@ fn layout() {
 
 #[test]
 fn basic_foo() {
-    let b = Foo {
-        vfptr: &FOO_VTBL as *const _ as usize,
-        a: 2.5,
-    };
+    let b = Foo::new(2.5);
 
+    // manually select the implementation
     assert_eq!(<Foo as FooVirtuals>::func(&b, 1, 2.0), 5);
+    // call through the vtable
     assert_eq!(b.func(1, 2.0), 5);
 }
 
 #[test]
 #[should_panic]
 fn unimpl_method() {
-    let b = Foo {
-        vfptr: &FOO_VTBL as *const _ as usize,
-        a: 2.5,
-    };
+    let b = Foo::new(2.5);
 
+    // ensure that unimplemented methods panic
     (unsafe { &*(b.vfptr as *const FooVTable) }.unimpl_0)()
 }
