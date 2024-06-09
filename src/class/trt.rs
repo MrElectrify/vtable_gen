@@ -41,7 +41,6 @@ fn collect_base_traits(class: &ItemClass) -> Vec<Ident> {
         .map(|(base, _)| {
             make_virtuals(
                 &base
-                    .path
                     .segments
                     .last()
                     .expect("expected base type segment")

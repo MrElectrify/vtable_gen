@@ -2,7 +2,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::ToTokens;
 use syn::{
     AngleBracketedGenericArguments, Attribute, braced, Field, GenericParam, Generics, ItemImpl,
-    LitInt, parenthesized, parse_quote, Signature, token, Token, TypePath, Visibility,
+    LitInt, parenthesized, parse_quote, Path, Signature, token, Token, Visibility,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -11,7 +11,16 @@ use syn::punctuated::Punctuated;
 #[derive(Debug, Default)]
 pub struct BaseClasses {
     pub colon_token: Option<Token![:]>,
-    pub bases: Vec<(TypePath, Option<Token![,]>)>,
+    pub bases: Vec<(Path, Option<Token![,]>)>,
+}
+
+impl BaseClasses {
+    /// Return the identifier of the base at `index`.
+    pub fn ident(&self, index: usize) -> Option<&Ident> {
+        self.bases
+            .get(index)
+            .map(|(base, _)| &base.segments.last().expect("expected path segment").ident)
+    }
 }
 
 impl Parse for BaseClasses {

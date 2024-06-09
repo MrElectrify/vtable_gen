@@ -1,11 +1,9 @@
-use convert_case::{Case, Casing};
 use itertools::Itertools;
 use quote::{format_ident, quote};
-use syn::{
-    Attribute, Field, FieldMutability, File, ItemImpl, Meta, parse_quote, Token, Type, Visibility,
-};
+use syn::{Attribute, Field, FieldMutability, File, Meta, parse_quote, Token, Type, Visibility};
 use syn::punctuated::Punctuated;
 
+use crate::class::make_base_name;
 use crate::class::vtable::make_vtable_static;
 use crate::parse::ItemClass;
 
@@ -21,37 +19,36 @@ pub fn gen_struct(class: &ItemClass) -> File {
 
     // add the bases to the fields list
     let mut fields = class.body.fields.clone();
-    for (base, _) in &class.bases.bases {
-        let base_ident_camel_case = base
-            .path
-            .segments
-            .last()
-            .expect("expected base type")
-            .ident
-            .to_string()
-            .to_case(Case::Snake);
+    for (idx, (base, _)) in class.bases.bases.iter().enumerate() {
+        let base_ident = class.bases.ident(idx).unwrap();
 
-        fields.push(Field {
-            attrs: vec![],
-            vis: Visibility::Inherited,
-            mutability: FieldMutability::None,
-            ident: Some(format_ident!("base_{base_ident_camel_case}")),
-            colon_token: None,
-            ty: Type::Path(base.clone()),
-        })
+        fields.insert(
+            0,
+            Field {
+                attrs: vec![],
+                vis: Visibility::Inherited,
+                mutability: FieldMutability::None,
+                ident: Some(make_base_name(base_ident)),
+                colon_token: None,
+                ty: Type::Path(parse_quote!(#base)),
+            },
+        )
     }
 
     // add the vtable if there aren't any bases and there are virtuals.
     if class.bases.bases.is_empty() && !class.body.virtuals.is_empty() {
         // push the VTable member
-        fields.push(Field {
-            attrs: vec![],
-            vis: Visibility::Inherited,
-            mutability: FieldMutability::None,
-            ident: Some(format_ident!("vfptr")),
-            colon_token: None,
-            ty: parse_quote!(usize),
-        })
+        fields.insert(
+            0,
+            Field {
+                attrs: vec![],
+                vis: Visibility::Inherited,
+                mutability: FieldMutability::None,
+                ident: Some(format_ident!("vfptr")),
+                colon_token: None,
+                ty: parse_quote!(usize),
+            },
+        )
     }
 
     // non-virtual bases are not supported because we don't have a way
@@ -97,7 +94,7 @@ fn has_repr_c(attrs: &[Attribute]) -> bool {
 }
 
 /// Intercepts `#[derive(Default)]` and implements it ourselves
-fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<ItemImpl> {
+fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File> {
     // see if there's a `derive` attribute
     let derive_attr = attrs
         .iter_mut()
@@ -138,20 +135,29 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<ItemI
     let vtable_static_ident = make_vtable_static(&class.ident, class.generic_args());
     let generic_args = class.generic_args();
 
-    Some(
-        syn::parse(
-            quote! {
-                impl #generics Default for #ident #generic_args {
-                    fn default() -> Self {
-                        Self {
-                            vfptr: &#vtable_static_ident as *const _ as usize,
-                            #(#arg_names: Default::default()),*
-                        }
-                    }
+    // either delegate the vtable up another level or set it directly
+    let vtbl_initializer = if let Some(base_ty) = class.bases.ident(0) {
+        let base_ident = make_base_name(base_ty);
+        quote! { #base_ident: #base_ty::_default_with_vtable(vfptr) }
+    } else {
+        quote! { vfptr }
+    };
+
+    let output = quote! {
+        impl #generics #ident #generic_args {
+            fn _default_with_vtable(vfptr: usize) -> Self {
+                Self {
+                    #vtbl_initializer,
+                    #(#arg_names: Default::default()),*
                 }
             }
-            .into(),
-        )
-        .expect("failed to generate default implementation"),
-    )
+        }
+
+        impl #generics Default for #ident #generic_args {
+            fn default() -> Self {
+                Self::_default_with_vtable(&#vtable_static_ident as *const _ as usize)
+            }
+        }
+    };
+    Some(syn::parse(output.into()).expect("failed to generate default implementation"))
 }
