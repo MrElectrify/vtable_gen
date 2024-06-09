@@ -2,7 +2,7 @@
 name = "vtable_gen"
 authors = ["Andrew Buck"]
 description = "A C++-ABI VTable Generator for Rust"
-version = "0.3.0"
+version = "0.10.0"
 edition = "2021"
 license = "MIT"
 readme = "README.md"
@@ -13,7 +13,9 @@ keywords = ["vtable", "gen"]
 proc-macro = true
 
 [dependencies]
-darling = "0.14"
+convert_case = "0.6"
+darling = "0.20"
+itertools = "0.13"
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "1.0", features = ["full"] }
+syn = { version = "2.0", features = ["full"] }
