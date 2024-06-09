@@ -134,12 +134,14 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<ItemI
         .collect_vec();
 
     let ident = &class.ident;
-    let vtable_static_ident = make_vtable_static(&class.ident);
+    let generics = &class.generics;
+    let vtable_static_ident = make_vtable_static(&class.ident, class.generic_args());
+    let generic_args = class.generic_args();
 
     Some(
         syn::parse(
             quote! {
-                impl Default for #ident {
+                impl #generics Default for #ident #generic_args {
                     fn default() -> Self {
                         Self {
                             vfptr: &#vtable_static_ident as *const _ as usize,

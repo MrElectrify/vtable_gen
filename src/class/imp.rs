@@ -2,18 +2,20 @@ use syn::{Expr, ExprStruct, ImplItem, ImplItemFn, ItemImpl, parse_quote, Stmt, T
 
 use crate::class::vtable::make_vtable_static;
 use crate::parse::{CppDef, ItemClass};
+use crate::util::extract_ident;
 
 /// Generates hooked versions of all implemented methods that construct instances.
 pub fn gen_hooks(def: &CppDef) -> Option<ItemImpl> {
     let mut imp = def.new_impl.clone()?;
+    let ident = &def.class.ident;
 
     // make sure the impl is for us
     let Type::Path(ty) = &*imp.self_ty else {
         panic!("implementation of a non-type found")
     };
     assert_eq!(
-        ty.path.get_ident(),
-        Some(&def.class.ident),
+        extract_ident(&ty.path),
+        ident,
         "only implementations of the class type are allowed"
     );
 
@@ -86,7 +88,8 @@ fn process_fn(class: &ItemClass, mut item: ImplItemFn) -> Vec<ImplItemFn> {
     }
 
     // add the vtable instantiation
-    let vtable_static_ident = make_vtable_static(&class.ident);
+    let vtable_static_ident = make_vtable_static(&class.ident, class.generic_args());
+
     for expr in instantiations {
         expr.fields.insert(
             0,

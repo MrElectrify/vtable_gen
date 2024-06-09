@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use convert_case::{Case, Casing};
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use syn::{
-    Expr, Field, FieldMutability, FieldValue, File, ItemConst, ItemStruct, parse_quote, Visibility,
+    AngleBracketedGenericArguments, Expr, Field, FieldMutability, FieldValue, File, ItemImpl,
+    ItemStruct, parse_quote, Path, Visibility,
 };
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
@@ -38,13 +38,14 @@ pub fn make_vtable_struct(ident: &Ident) -> Ident {
 }
 
 /// Make the VTable static identifier.
-pub fn make_vtable_static(ident: &Ident) -> Ident {
-    format_ident!("{}_VTBL", ident.to_string().to_case(Case::ScreamingSnake))
+pub fn make_vtable_static(ident: &Ident, generics: AngleBracketedGenericArguments) -> Path {
+    parse_quote!(#ident :: #generics :: VTBL)
 }
 
 /// Generates the default VTable for the class.
-fn gen_vtable_static(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemConst {
+fn gen_vtable_static(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemImpl {
     let class_ident = &class.ident;
+    let generic_args = class.generic_args();
     let vis = &class.vis;
     let virtuals_ident = make_virtuals(class_ident);
     let mut body = Punctuated::<FieldValue, Comma>::new();
@@ -54,7 +55,7 @@ fn gen_vtable_static(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
             // either translate the virtual into a function, or generate an unimplemented virtual
             let (ident, expr): (Ident, Expr) = if let Some(virt) = virtuals.get(&idx) {
                 let ident = virt.sig.ident.clone();
-                let stmt = parse_quote!(<#class_ident as #virtuals_ident>::#ident);
+                let stmt = parse_quote!(<#class_ident #generic_args as #virtuals_ident #generic_args>::#ident);
 
                 (ident, stmt)
             } else {
@@ -68,14 +69,17 @@ fn gen_vtable_static(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
         }
     }
 
-    let vtable_static_ident = make_vtable_static(class_ident);
+    let generics = &class.generics;
+    let generic_args = class.generic_args();
     let vtable_struct_ident = make_vtable_struct(class_ident);
 
     syn::parse(
         quote! {
-            #vis const #vtable_static_ident: #vtable_struct_ident = #vtable_struct_ident {
-                #body
-            };
+            impl #generics #class_ident #generic_args {
+                #vis const VTBL: #vtable_struct_ident #generic_args = #vtable_struct_ident :: #generic_args {
+                    #body
+                };
+            }
         }
         .into(),
     )
@@ -120,10 +124,11 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
         }
     }
 
+    let generics = &class.generics;
     syn::parse(
         quote! {
             #[repr(C)]
-            #vis struct #vtable_ident {
+            #vis struct #vtable_ident #generics {
                 #body
             }
         }

@@ -141,6 +141,7 @@ use proc_macro::TokenStream;
 
 mod class;
 mod parse;
+mod util;
 
 /// Generates a VTable member for a struct, or a trait if the struct is a vtable. See examples.
 #[proc_macro]

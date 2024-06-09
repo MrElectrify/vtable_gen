@@ -1,8 +1,8 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::ToTokens;
 use syn::{
-    Attribute, braced, Field, Generics, ItemImpl, LitInt, parenthesized, Signature, token, Token,
-    TypePath, Visibility,
+    AngleBracketedGenericArguments, Attribute, braced, Field, GenericParam, Generics, ItemImpl,
+    LitInt, parenthesized, parse_quote, Signature, token, Token, TypePath, Visibility,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -85,6 +85,29 @@ pub struct ItemClass {
     pub generics: Generics,
     pub bases: BaseClasses,
     pub body: ClassBody,
+}
+
+impl ItemClass {
+    /// Returns the generic arguments used.
+    pub fn generic_args(&self) -> AngleBracketedGenericArguments {
+        let mut args = Punctuated::new();
+        for param in self.generics.params.iter() {
+            let ident = match param {
+                GenericParam::Type(ty) => &ty.ident,
+                GenericParam::Lifetime(lt) => &lt.lifetime.ident,
+                GenericParam::Const(ct) => &ct.ident,
+            };
+
+            args.push(parse_quote!(#ident))
+        }
+
+        AngleBracketedGenericArguments {
+            colon2_token: None,
+            lt_token: parse_quote!(<),
+            args,
+            gt_token: parse_quote!(>),
+        }
+    }
 }
 
 impl Parse for ItemClass {

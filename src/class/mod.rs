@@ -43,6 +43,7 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
 /// Standardizes the ABI and signatures for virtuals.
 fn standardize_virtuals(class: &mut ItemClass) {
+    let generic_args = class.generic_args();
     for virt in class.body.virtuals.iter_mut() {
         if virt.sig.abi.is_none() {
             virt.sig.abi = parse_quote!(extern "C");
@@ -57,7 +58,7 @@ fn standardize_virtuals(class: &mut ItemClass) {
                 attrs: vec![],
                 pat: Box::new(parse_quote!(this)),
                 colon_token: Default::default(),
-                ty: Box::new(parse_quote!(&#mutability #class_ident)),
+                ty: Box::new(parse_quote!(&#mutability #class_ident #generic_args)),
             });
         } else {
             panic!("virtuals must take `&self` or `&mut self`")

@@ -8,6 +8,7 @@ use crate::parse::ItemClass;
 /// Generates a bridge between a class and its virtuals.
 pub fn gen_bridge(class: &ItemClass) -> ItemImpl {
     let ident = &class.ident;
+    let generic_args = class.generic_args();
     let vtable_ident = make_vtable_struct(&class.ident);
 
     // generate direct functions
@@ -39,15 +40,17 @@ pub fn gen_bridge(class: &ItemClass) -> ItemImpl {
         fns.push(parse_quote! {
             #(#attrs)*
             #vis #unsafety fn #ident (#args) #output {
-                let vtbl = unsafe { &*(self.vfptr as *const #vtable_ident) };
+                let vtbl = unsafe { &*(self.vfptr as *const #vtable_ident #generic_args) };
                 (vtbl.#ident)(#(#arg_names),*)
             }
         });
     }
 
+    let generics = &class.generics;
+    let generic_args = class.generic_args();
     syn::parse(
         quote! {
-            impl #ident {
+            impl #generics #ident #generic_args {
                 #(#fns)*
             }
         }
