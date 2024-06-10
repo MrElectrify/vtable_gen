@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 
 use convert_case::{Case, Casing};
+use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     AngleBracketedGenericArguments, Field, FieldMutability, File, ItemImpl, ItemMacro, ItemStruct,
-    parse_quote, Path, Visibility,
+    parse_quote, Path, PathArguments, Visibility,
 };
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
@@ -54,18 +55,60 @@ pub fn make_vtable_static(ident: &Ident, generics: AngleBracketedGenericArgument
     parse_quote!(#ident :: #generics :: VTBL)
 }
 
+/// Extracts generics from an implementor.
+fn extract_implementor_generics(class: &ItemClass, base_path: &Path) -> Vec<TokenStream> {
+    let class_generics = class.generic_args();
+
+    // extract the angle bracketed_arguments
+    let def_generics = match &base_path
+        .segments
+        .last()
+        .expect("expected path segment")
+        .arguments
+    {
+        PathArguments::AngleBracketed(def_generics) => def_generics.clone(),
+        _ => parse_quote!(<>),
+    };
+
+    // determine the position of each and extract it out of the parent definition
+    def_generics
+        .args
+        .iter()
+        .map(|base_arg| {
+            class_generics
+                .args
+                .iter()
+                .position(|class_arg| class_arg == base_arg)
+                .map(|idx| {
+                    let ident = format_ident!("def_generic_{idx}");
+                    quote! { $#ident }
+                })
+                .unwrap_or_else(|| base_arg.to_token_stream())
+        })
+        .collect()
+}
+
 /// Generates a macro that populates the VTable for `class`.
 fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemMacro {
     let class_ident = &class.ident;
     let virtuals_ident = make_virtuals(class_ident);
     let mut fields = Vec::new();
 
+    // collect all generic args into descriptors
+    let def_generic_arg_idents = class
+        .generic_args()
+        .args
+        .iter()
+        .enumerate()
+        .map(|(idx, _)| format_ident!("def_generic_{idx}"))
+        .collect_vec();
+
     if let Some((high_idx, _)) = virtuals.last_key_value() {
         for idx in 0..=*high_idx {
             // either translate the virtual into a function, or generate an unimplemented virtual
             let (ident, expr): (Ident, TokenStream) = if let Some(virt) = virtuals.get(&idx) {
                 let ident = virt.sig.ident.clone();
-                let stmt = quote!(<$implementor_ty <$($implementor_ty_generics),*> as #virtuals_ident <$($def_generics),*>>::#ident);
+                let stmt = quote!(<$implementor_ty as #virtuals_ident <#($#def_generic_arg_idents),*>>::#ident);
 
                 (ident, stmt)
             } else {
@@ -82,17 +125,14 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
     // generate the base vtable
     if let Some(base_path) = class.bases.path(0) {
         let base_ty = extract_ident(base_path);
-        let def_generics = &base_path
-            .segments
-            .last()
-            .expect("expected path segment")
-            .arguments;
         let macro_ident = make_vtable_macro(base_ty);
         let base_ident = make_base_name(base_ty);
 
+        // determine the position of each and extract it out of the parent definition
+        let base_def_args = extract_implementor_generics(class, base_path);
         fields.insert(
             0,
-            parse_quote!(#base_ident: #macro_ident!($implementor_ty <$($implementor_ty_generics),*>, #def_generics)),
+            parse_quote!(#base_ident: #macro_ident!($implementor_ty, <#(#base_def_args),*>)),
         )
     }
 
@@ -103,10 +143,9 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
         #[macro_export]
         macro_rules! #macro_ident {
             // implementor_ty: The type of the implementor.
-            // implementor_ty_generics: The generic arguments of the implementor.
-            // def_generics: The generic arguments named in the base type member.
-            ($implementor_ty:ident <$($implementor_ty_generics:tt),*>, <$($def_generics:tt),*>) => {
-                #struct_ident :: <$($def_generics),*> {
+            // gen_x: The definition generic at position `x`.
+            ($implementor_ty:ty, <#($#def_generic_arg_idents: tt),*>) => {
+                #struct_ident :: <#($#def_generic_arg_idents),*> {
                     #(#fields),*
                 }
             }
