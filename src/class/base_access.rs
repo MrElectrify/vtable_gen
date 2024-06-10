@@ -25,25 +25,30 @@ pub fn gen_base_helpers(class: &ItemClass) -> File {
 // implement `AsRef` for all bases.
 fn impl_as_ref(class: &ItemClass) -> File {
     let ident = &class.ident;
-    let base_idents = class
+    let generics = &class.generics;
+    let generic_args = class.generic_args();
+    let base_paths = class
         .bases
         .bases
         .iter()
-        .map(|(base, _)| extract_ident(base).clone())
+        .map(|(base, _)| base.clone())
         .collect_vec();
-    let base_names = base_idents.iter().map(make_base_name).collect_vec();
+    let base_names = base_paths
+        .iter()
+        .map(|path| make_base_name(extract_ident(path)))
+        .collect_vec();
 
     syn::parse(
         quote! {
             #(
-                impl AsRef<#base_idents> for #ident {
-                    fn as_ref(&self) -> &#base_idents {
+                impl #generics AsRef<#base_paths> for #ident #generic_args {
+                    fn as_ref(&self) -> &#base_paths {
                         &self.#base_names
                     }
                 }
 
-                impl AsMut<#base_idents> for #ident {
-                    fn as_mut(&mut self) -> &mut #base_idents {
+                impl #generics AsMut<#base_paths> for #ident #generic_args {
+                    fn as_mut(&mut self) -> &mut #base_paths {
                         &mut self.#base_names
                     }
                 }
@@ -57,22 +62,24 @@ fn impl_as_ref(class: &ItemClass) -> File {
 // implement `Deref` and `DerefMut` for the primary base.
 fn impl_deref(class: &ItemClass) -> Option<File> {
     let ident = &class.ident;
-    let base_ident = class.bases.ident(0)?;
-    let name = make_base_name(base_ident);
+    let generics = &class.generics;
+    let generic_args = class.generic_args();
+    let (base_path, _) = class.bases.bases.first()?;
+    let base_ident = make_base_name(extract_ident(base_path));
 
     Some(
         syn::parse(
             quote! {
-                impl core::ops::Deref for #ident {
-                    type Target = #base_ident;
+                impl #generics core::ops::Deref for #ident #generic_args {
+                    type Target = #base_path;
                     fn deref(&self) -> &Self::Target {
-                        &self.#name
+                        &self.#base_ident
                     }
                 }
 
-                impl core::ops::DerefMut for #ident {
+                impl #generics core::ops::DerefMut for #ident #generic_args {
                     fn deref_mut(&mut self) -> &mut Self::Target {
-                        &mut self.#name
+                        &mut self.#base_ident
                     }
                 }
             }

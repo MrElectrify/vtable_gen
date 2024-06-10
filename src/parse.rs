@@ -17,9 +17,13 @@ pub struct BaseClasses {
 impl BaseClasses {
     /// Return the identifier of the base at `index`.
     pub fn ident(&self, index: usize) -> Option<&Ident> {
-        self.bases
-            .get(index)
-            .map(|(base, _)| &base.segments.last().expect("expected path segment").ident)
+        self.path(index)
+            .map(|path| &path.segments.last().expect("expected path segment").ident)
+    }
+
+    /// Return the path of the base at `index`.
+    pub fn path(&self, index: usize) -> Option<&Path> {
+        self.bases.get(index).map(|(path, _)| path)
     }
 }
 

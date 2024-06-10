@@ -1,6 +1,6 @@
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{ItemTrait, TraitItemFn};
+use syn::{ItemTrait, Path, TraitItemFn};
 
 use crate::parse::ItemClass;
 
@@ -33,19 +33,19 @@ pub fn make_virtuals(ident: &Ident) -> Ident {
 }
 
 /// Collects a list of base trait identifiers.
-fn collect_base_traits(class: &ItemClass) -> Vec<Ident> {
+fn collect_base_traits(class: &ItemClass) -> Vec<Path> {
     class
         .bases
         .bases
         .iter()
-        .map(|(base, _)| {
-            make_virtuals(
-                &base
-                    .segments
-                    .last()
-                    .expect("expected base type segment")
-                    .ident,
-            )
+        .cloned()
+        .map(|(mut base, _)| {
+            let segment = base
+                .segments
+                .last_mut()
+                .expect("expected base type segment");
+            segment.ident = make_virtuals(&segment.ident);
+            base
         })
         .collect()
 }

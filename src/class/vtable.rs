@@ -13,6 +13,7 @@ use syn::token::Comma;
 use crate::class::make_base_name;
 use crate::class::trt::make_virtuals;
 use crate::parse::{ItemClass, Virtual};
+use crate::util::extract_ident;
 
 /// Generates a VTable for the class.
 pub fn gen_vtable(class: &ItemClass) -> File {
@@ -56,7 +57,6 @@ pub fn make_vtable_static(ident: &Ident, generics: AngleBracketedGenericArgument
 /// Generates a macro that populates the VTable for `class`.
 fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemMacro {
     let class_ident = &class.ident;
-    let generic_args = class.generic_args();
     let virtuals_ident = make_virtuals(class_ident);
     let mut fields = Vec::new();
 
@@ -65,7 +65,7 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
             // either translate the virtual into a function, or generate an unimplemented virtual
             let (ident, expr): (Ident, TokenStream) = if let Some(virt) = virtuals.get(&idx) {
                 let ident = virt.sig.ident.clone();
-                let stmt = quote!(<$ty as #virtuals_ident #generic_args>::#ident);
+                let stmt = quote!(<$implementor_ty <$($implementor_ty_generics),*> as #virtuals_ident <$($def_generics),*>>::#ident);
 
                 (ident, stmt)
             } else {
@@ -80,10 +80,20 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
     }
 
     // generate the base vtable
-    if let Some(base_ty) = class.bases.ident(0) {
-        let base_ident = make_base_name(base_ty);
+    if let Some(base_path) = class.bases.path(0) {
+        let base_ty = extract_ident(base_path);
+        let def_generics = &base_path
+            .segments
+            .last()
+            .expect("expected path segment")
+            .arguments;
         let macro_ident = make_vtable_macro(base_ty);
-        fields.insert(0, parse_quote!(#base_ident: #macro_ident!($ty)))
+        let base_ident = make_base_name(base_ty);
+
+        fields.insert(
+            0,
+            parse_quote!(#base_ident: #macro_ident!($implementor_ty <$($implementor_ty_generics),*>, #def_generics)),
+        )
     }
 
     let macro_ident = make_vtable_macro(class_ident);
@@ -92,8 +102,11 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
     let output = quote! {
         #[macro_export]
         macro_rules! #macro_ident {
-            ($ty:ty) => {
-                #struct_ident :: #generic_args {
+            // implementor_ty: The type of the implementor.
+            // implementor_ty_generics: The generic arguments of the implementor.
+            // def_generics: The generic arguments named in the base type member.
+            ($implementor_ty:ident <$($implementor_ty_generics:tt),*>, <$($def_generics:tt),*>) => {
+                #struct_ident :: <$($def_generics),*> {
                     #(#fields),*
                 }
             }
@@ -114,7 +127,7 @@ fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
     let output = quote! {
         impl #generics #class_ident #generic_args {
             #vis const VTBL: #vtable_struct_ident #generic_args =
-                #macro_ident!(#class_ident #generic_args);
+                #macro_ident!(#class_ident #generic_args, #generic_args);
         }
     };
     syn::parse(output.into()).expect("failed to generate vtable static")
@@ -159,8 +172,14 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
     }
 
     // add the base VTable if there is one
-    if let Some(base_ident) = class.bases.ident(0) {
+    if let Some(base_path) = class.bases.path(0) {
+        let base_ident = extract_ident(base_path);
         let base_vtable_ident = make_vtable_struct(base_ident);
+        let base_args = &base_path
+            .segments
+            .last()
+            .expect("expected path segment")
+            .arguments;
 
         fields.insert(
             0,
@@ -170,7 +189,7 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
                 mutability: FieldMutability::None,
                 ident: Some(make_base_name(base_ident)),
                 colon_token: None,
-                ty: parse_quote!(#base_vtable_ident),
+                ty: parse_quote!(#base_vtable_ident #base_args),
             },
         )
     }
