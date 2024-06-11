@@ -1,11 +1,12 @@
 use itertools::Itertools;
 use quote::{format_ident, quote};
-use syn::{Attribute, Field, FieldMutability, File, Meta, parse_quote, Token, Type, Visibility};
+use syn::{Attribute, Field, FieldMutability, File, Meta, parse_quote, Token, Visibility};
 use syn::punctuated::Punctuated;
 
 use crate::class::make_base_name;
 use crate::class::vtable::{make_vtable_ident, make_vtable_static};
 use crate::parse::ItemClass;
+use crate::util::extract_ident;
 
 /// Generates the base structure.
 pub fn gen_struct(class: &ItemClass) -> File {
@@ -19,20 +20,9 @@ pub fn gen_struct(class: &ItemClass) -> File {
 
     // add the bases to the fields list
     let mut fields = class.body.fields.clone();
-    for (idx, (base, _)) in class.bases.bases.iter().enumerate() {
-        let base_ident = class.bases.ident(idx).unwrap();
-
-        fields.insert(
-            0,
-            Field {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                mutability: FieldMutability::None,
-                ident: Some(make_base_name(base_ident)),
-                colon_token: None,
-                ty: Type::Path(parse_quote!(#base)),
-            },
-        )
+    for (idx, (base_ty, _)) in class.bases.bases.iter().enumerate().rev() {
+        let base_ident = make_base_name(class.bases.ident(idx).unwrap());
+        fields.insert(0, parse_quote!(#base_ident: #base_ty));
     }
 
     // add the vtable if there aren't any bases and there are virtuals.
@@ -134,13 +124,31 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
 
     let ident = &class.ident;
     let generics = &class.generics;
-    let vtable_static_ident = make_vtable_static(&class.ident, class.generic_args());
     let generic_args = class.generic_args();
+    let vtable_static_ident = make_vtable_static(ident, ident, &generic_args);
+    let generic_args = class.generic_args();
+
+    // the secondary base classes
+    let secondary_base_idents = class.bases.paths().skip(1).map(extract_ident).collect_vec();
+    let secondary_base_params = secondary_base_idents
+        .iter()
+        .cloned()
+        .map(make_base_name)
+        .collect_vec();
+    let secondary_base_vtable_types = secondary_base_idents
+        .iter()
+        .cloned()
+        .map(make_vtable_ident)
+        .collect_vec();
+    let secondary_base_statics = secondary_base_idents
+        .iter()
+        .map(|base_ident| make_vtable_static(ident, base_ident, &generic_args))
+        .collect_vec();
 
     // either delegate the vtable up another level or set it directly
     let vtbl_initializer = if let Some(base_ty) = class.bases.ident(0) {
-        let base_ident = make_base_name(base_ty);
-        quote! { #base_ident: #base_ty::_default_with_vtable(&vfptr.#base_ident) }
+        let primary_base_ident = make_base_name(base_ty);
+        quote! { #primary_base_ident: #base_ty::_default_with_vtable(&vfptr.#primary_base_ident) }
     } else {
         quote! { vfptr }
     };
@@ -148,9 +156,11 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
     let vtable_ty = make_vtable_ident(&class.ident);
     let output = quote! {
         impl #generics #ident #generic_args {
-            fn _default_with_vtable(vfptr: &'static #vtable_ty #generic_args) -> Self {
+            fn _default_with_vtable(vfptr: &'static #vtable_ty #generic_args,
+                #(#secondary_base_params: &'static #secondary_base_vtable_types),*) -> Self {
                 Self {
                     #vtbl_initializer,
+                    #(#secondary_base_params: #secondary_base_idents::_default_with_vtable(#secondary_base_params),)*
                     #(#arg_names: Default::default()),*
                 }
             }
@@ -158,7 +168,7 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
 
         impl #generics Default for #ident #generic_args {
             fn default() -> Self {
-                Self::_default_with_vtable(&#vtable_static_ident)
+                Self::_default_with_vtable(&#vtable_static_ident, #(&#secondary_base_statics),*)
             }
         }
     };

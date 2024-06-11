@@ -5,8 +5,8 @@ use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    AngleBracketedGenericArguments, Field, FieldMutability, File, ItemImpl, ItemMacro, ItemStruct,
-    parse_quote, Path, PathArguments, Visibility,
+    AngleBracketedGenericArguments, Field, FieldMutability, File, GenericArgument, ItemConst,
+    ItemImpl, ItemMacro, ItemStruct, parse_quote, Path, PathArguments, Visibility,
 };
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
@@ -14,7 +14,7 @@ use syn::token::Comma;
 use crate::class::make_base_name;
 use crate::class::trt::make_virtuals;
 use crate::parse::{ItemClass, Virtual};
-use crate::util::extract_ident;
+use crate::util::{extract_ident, last_segment};
 
 /// Generates a VTable for the class.
 pub fn gen_vtable(class: &ItemClass) -> File {
@@ -50,9 +50,17 @@ pub fn make_vtable_macro_ident(ident: &Ident) -> Ident {
     format_ident!("gen_{}_vtable", ident.to_string().to_case(Case::Snake))
 }
 
-/// Make the VTable static identifier.
-pub fn make_vtable_static(ident: &Ident, generics: AngleBracketedGenericArguments) -> Path {
-    parse_quote!(#ident :: #generics :: VTBL)
+/// Make the VTable static identifier for a base class. Only used for secondary implementations.
+pub fn make_vtable_static(
+    ident: &Ident,
+    base: &Ident,
+    generics: &AngleBracketedGenericArguments,
+) -> Path {
+    let vtable_ident = format_ident!(
+        "VTBL_FOR_{}",
+        base.to_string().to_case(Case::ScreamingSnake)
+    );
+    parse_quote!(#ident :: #generics :: #vtable_ident)
 }
 
 /// Extracts generics from an implementor.
@@ -154,19 +162,66 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
     syn::parse(output.into()).expect("failed to generate vtable macro")
 }
 
+/// Generates a VTable static for a type.
+fn gen_vtable_static_for(
+    class_ident: &Ident,
+    vtable_ty: &Ident,
+    vis: &Visibility,
+    generic_args: &[GenericArgument],
+) -> ItemConst {
+    let generic_args: AngleBracketedGenericArguments = parse_quote!(<#(#generic_args),*>);
+    let macro_ident = make_vtable_macro_ident(vtable_ty);
+    let vtable_static_path = make_vtable_static(class_ident, vtable_ty, &generic_args);
+    let vtable_static_ident = extract_ident(&vtable_static_path);
+    let vtable_struct_ident = make_vtable_ident(vtable_ty);
+
+    let output = quote! {
+        #vis const #vtable_static_ident: #vtable_struct_ident #generic_args =
+            #macro_ident!(#class_ident #generic_args, #generic_args);
+    };
+    syn::parse(output.into())
+        .unwrap_or_else(|e| panic!("failed to generate vtable {vtable_ty} for {class_ident}: {e}"))
+}
+
 /// Generates the default VTable for the class.
 fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
     let class_ident = &class.ident;
-    let vis = &class.vis;
+    let class_vis = &class.vis;
     let generics = &class.generics;
     let generic_args = class.generic_args();
-    let macro_ident = make_vtable_macro_ident(class_ident);
-    let vtable_struct_ident = make_vtable_ident(class_ident);
+
+    // generate the primary vtable
+    let mut consts = vec![gen_vtable_static_for(
+        class_ident,
+        class_ident,
+        class_vis,
+        &generic_args.args.iter().cloned().collect_vec(),
+    )];
+
+    // generate secondary vtables
+    // the secondary base classes
+    let secondary_base_types = class.bases.paths().skip(1).collect_vec();
+    for secondary_base_type in &secondary_base_types {
+        let last_segment = last_segment(secondary_base_type);
+        let base_ident = &last_segment.ident;
+        let generics = if let PathArguments::AngleBracketed(def_generics) = &last_segment.arguments
+        {
+            def_generics.clone()
+        } else {
+            parse_quote!(<>)
+        };
+
+        consts.push(gen_vtable_static_for(
+            class_ident,
+            base_ident,
+            class_vis,
+            &generics.args.iter().cloned().collect_vec(),
+        ))
+    }
 
     let output = quote! {
         impl #generics #class_ident #generic_args {
-            #vis const VTBL: #vtable_struct_ident #generic_args =
-                #macro_ident!(#class_ident #generic_args, #generic_args);
+            #(#consts)*
         }
     };
     syn::parse(output.into()).expect("failed to generate vtable static")

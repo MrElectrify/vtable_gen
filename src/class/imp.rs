@@ -71,11 +71,24 @@ fn gen_stub(class: &ItemClass, func: &ImplItemFn) -> ImplItemFn {
         .collect_vec();
 
     let proxy_ident = make_ctor_call(ident);
-    let static_ident = make_vtable_static(&class.ident, class.generic_args());
+    let static_ident = make_vtable_static(&class.ident, &class.ident, &class.generic_args());
+
+    // the secondary base classes
+    let secondary_base_types = class.bases.paths().skip(1).collect_vec();
+    let secondary_base_idents = secondary_base_types
+        .iter()
+        .map(|base_ident| {
+            make_vtable_static(
+                &class.ident,
+                extract_ident(base_ident),
+                &class.generic_args(),
+            )
+        })
+        .collect_vec();
 
     let output = quote! {
         #vis #unsafety #abi fn #ident(#args) #output {
-            Self::#proxy_ident(#(#arg_names,)* &#static_ident)
+            Self::#proxy_ident(#(#arg_names,)* &#static_ident, #(&#secondary_base_idents),*)
         }
     };
     syn::parse(output.into()).expect("failed to generate stub")
@@ -132,21 +145,43 @@ fn process_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
         panic!("only impls that instantiate the target are allowed")
     }
 
-    // add the vtable input parameter
+    // the secondary base classes
     let generic_args = class.generic_args();
+    let secondary_base_idents = class.bases.paths().skip(1).map(extract_ident).collect_vec();
+    let secondary_base_params = secondary_base_idents
+        .iter()
+        .cloned()
+        .map(make_base_name)
+        .collect_vec();
+    let secondary_base_vtable_types = secondary_base_idents
+        .iter()
+        .cloned()
+        .map(make_vtable_ident)
+        .collect_vec();
+
+    // add the vtable input parameters
     let vtable_ty = make_vtable_ident(&class.ident);
     func.sig
         .inputs
         .push(parse_quote!(vfptr: &'static #vtable_ty #generic_args));
+    for (base_param, base_vtable_type) in secondary_base_params
+        .iter()
+        .zip(&secondary_base_vtable_types)
+    {
+        func.sig
+            .inputs
+            .push(parse_quote!(#base_param: &'static #base_vtable_type))
+    }
 
     // add the vtable instantiation
     let fn_ident = &func.sig.ident;
     for expr in instantiations {
-        for base_ty in class
+        for (idx, base_ty) in class
             .bases
             .bases
             .iter()
             .map(|(base, _)| extract_ident(base))
+            .enumerate()
         {
             // find the method that is called on the base type
             let base_ident = make_base_name(base_ty);
@@ -174,7 +209,12 @@ fn process_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
             fn_segment.ident = make_ctor_call(&fn_segment.ident);
 
             // add the `vfptr` member
-            call.args.push(parse_quote!(&vfptr.#base_ident));
+            if idx == 0 {
+                call.args.push(parse_quote!(&vfptr.#base_ident));
+            } else {
+                let param = &secondary_base_params[idx - 1];
+                call.args.push(parse_quote!(#param))
+            }
         }
 
         if class.bases.is_empty() {

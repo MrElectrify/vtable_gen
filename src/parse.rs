@@ -7,6 +7,8 @@ use syn::{
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 
+use crate::util::last_segment;
+
 /// Base classes.
 #[derive(Debug, Default)]
 pub struct BaseClasses {
@@ -17,8 +19,7 @@ pub struct BaseClasses {
 impl BaseClasses {
     /// Return the identifier of the base at `index`.
     pub fn ident(&self, index: usize) -> Option<&Ident> {
-        self.path(index)
-            .map(|path| &path.segments.last().expect("expected path segment").ident)
+        self.path(index).map(|path| &last_segment(path).ident)
     }
 
     /// Returns true if there are no base classes.
@@ -29,6 +30,11 @@ impl BaseClasses {
     /// Return the path of the base at `index`.
     pub fn path(&self, index: usize) -> Option<&Path> {
         self.bases.get(index).map(|(path, _)| path)
+    }
+
+    /// Returns an iterator over all paths.
+    pub fn paths(&self) -> impl Iterator<Item = &Path> {
+        self.bases.iter().map(|(path, _)| path)
     }
 }
 
