@@ -41,12 +41,12 @@ pub fn gen_vtable(class: &ItemClass) -> File {
 }
 
 /// Make the VTable struct identifier.
-pub fn make_vtable_struct(ident: &Ident) -> Ident {
+pub fn make_vtable_ident(ident: &Ident) -> Ident {
     format_ident!("{ident}VTable")
 }
 
 /// Make the VTable struct identifier.
-pub fn make_vtable_macro(ident: &Ident) -> Ident {
+pub fn make_vtable_macro_ident(ident: &Ident) -> Ident {
     format_ident!("gen_{}_vtable", ident.to_string().to_case(Case::Snake))
 }
 
@@ -125,7 +125,7 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
     // generate the base vtable
     if let Some(base_path) = class.bases.path(0) {
         let base_ty = extract_ident(base_path);
-        let macro_ident = make_vtable_macro(base_ty);
+        let macro_ident = make_vtable_macro_ident(base_ty);
         let base_ident = make_base_name(base_ty);
 
         // determine the position of each and extract it out of the parent definition
@@ -136,8 +136,8 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
         )
     }
 
-    let macro_ident = make_vtable_macro(class_ident);
-    let struct_ident = make_vtable_struct(class_ident);
+    let macro_ident = make_vtable_macro_ident(class_ident);
+    let struct_ident = make_vtable_ident(class_ident);
 
     let output = quote! {
         #[macro_export]
@@ -160,8 +160,8 @@ fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
     let vis = &class.vis;
     let generics = &class.generics;
     let generic_args = class.generic_args();
-    let macro_ident = make_vtable_macro(class_ident);
-    let vtable_struct_ident = make_vtable_struct(class_ident);
+    let macro_ident = make_vtable_macro_ident(class_ident);
+    let vtable_struct_ident = make_vtable_ident(class_ident);
 
     let output = quote! {
         impl #generics #class_ident #generic_args {
@@ -175,7 +175,7 @@ fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
 /// Generates the VTable struct for the class.
 fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemStruct {
     let vis = &class.vis;
-    let vtable_ident = make_vtable_struct(&class.ident);
+    let vtable_ident = make_vtable_ident(&class.ident);
     let mut fields = Punctuated::<Field, Comma>::new();
 
     if let Some((high_idx, _)) = virtuals.last_key_value() {
@@ -213,7 +213,7 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
     // add the base VTable if there is one
     if let Some(base_path) = class.bases.path(0) {
         let base_ident = extract_ident(base_path);
-        let base_vtable_ident = make_vtable_struct(base_ident);
+        let base_vtable_ident = make_vtable_ident(base_ident);
         let base_args = &base_path
             .segments
             .last()
@@ -237,6 +237,7 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
     syn::parse(
         quote! {
             #[repr(C)]
+            #[derive(Debug)]
             #vis struct #vtable_ident #generics {
                 #fields
             }

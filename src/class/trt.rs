@@ -16,15 +16,12 @@ pub fn gen_trait(class: &ItemClass) -> ItemTrait {
     // collect trait functions
     let trait_functions = collect_functions(class);
 
-    syn::parse(
-        quote! {
-            #vis trait #virtuals_ident #generics: #(#base_traits),* {
-                #(#trait_functions)*
-            }
+    let output = quote! {
+        #vis trait #virtuals_ident #generics: #(#base_traits)+* {
+            #(#trait_functions)*
         }
-        .into(),
-    )
-    .expect("failed to generate trait")
+    };
+    syn::parse(output.into()).expect("failed to generate trait")
 }
 
 /// Makes a class identifier refer to its virtuals trait.

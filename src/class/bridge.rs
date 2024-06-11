@@ -2,14 +2,14 @@ use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use syn::{FnArg, ItemFn, ItemImpl, parse_quote, Pat};
 
-use crate::class::vtable::make_vtable_struct;
+use crate::class::vtable::make_vtable_ident;
 use crate::parse::ItemClass;
 
 /// Generates a bridge between a class and its virtuals.
 pub fn gen_bridge(class: &ItemClass) -> ItemImpl {
     let ident = &class.ident;
     let generic_args = class.generic_args();
-    let vtable_ident = make_vtable_struct(&class.ident);
+    let vtable_ident = make_vtable_ident(&class.ident);
 
     // generate direct functions
     let mut fns: Vec<ItemFn> = Vec::new();
@@ -40,7 +40,7 @@ pub fn gen_bridge(class: &ItemClass) -> ItemImpl {
         fns.push(parse_quote! {
             #(#attrs)*
             #vis #unsafety fn #ident (#args) #output {
-                let vtbl = unsafe { &*(self.vfptr as *const #vtable_ident #generic_args) };
+                let vtbl = unsafe { &*(self.vfptr as *const _ as *const #vtable_ident #generic_args) };
                 (vtbl.#ident)(#(#arg_names),*)
             }
         });

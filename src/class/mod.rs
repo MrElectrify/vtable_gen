@@ -1,7 +1,7 @@
 use convert_case::{Case, Casing};
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{FnArg, parse_macro_input, parse_quote, PatType};
+use syn::{FnArg, GenericParam, parse_macro_input, parse_quote, PatType};
 
 use crate::parse::{CppDef, ItemClass};
 
@@ -15,6 +15,9 @@ mod vtable;
 /// Generates the Rust Struct, VTable struct and Virtuals struct.
 pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut def = parse_macro_input!(input as CppDef);
+
+    // enforces static trait bounds (required for VTable)
+    enforce_static(&mut def.class);
 
     // generate the base rust structure
     let stct = stct::gen_struct(&def.class);
@@ -46,6 +49,15 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         #access_helpers
     };
     output.into()
+}
+
+/// Enforces that each trait parameter is static.
+fn enforce_static(class: &mut ItemClass) {
+    for generic in class.generics.params.iter_mut() {
+        if let GenericParam::Type(ty) = generic {
+            ty.bounds.push(parse_quote!('static))
+        }
+    }
 }
 
 /// Makes the base identifier for a type.

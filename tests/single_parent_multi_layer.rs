@@ -120,10 +120,7 @@ fn unimpl_method() {
     let b = Baz::new(2.5, 3.5, 4.5);
 
     // ensure that unimplemented methods panic
-    (unsafe { &*(b.vfptr as *const BazVTable) }
-        .base_bar
-        .base_foo
-        .unimpl_0)()
+    (unsafe { &*(b.vfptr as *const FooVTable) }.unimpl_0)()
 }
 
 #[test]

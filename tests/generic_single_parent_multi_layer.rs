@@ -123,10 +123,7 @@ fn unimpl_method() {
     let b = Baz::<u32>::new(1, 2, 3);
 
     // ensure that unimplemented methods panic
-    (unsafe { &*(b.vfptr as *const BazVTable<u32>) }
-        .base_bar
-        .base_foo
-        .unimpl_0)()
+    (unsafe { &*(b.vfptr as *const FooVTable<19, u32>) }.unimpl_0)()
 }
 
 #[test]

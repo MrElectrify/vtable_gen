@@ -21,6 +21,11 @@ impl BaseClasses {
             .map(|path| &path.segments.last().expect("expected path segment").ident)
     }
 
+    /// Returns true if there are no base classes.
+    pub fn is_empty(&self) -> bool {
+        self.bases.is_empty()
+    }
+
     /// Return the path of the base at `index`.
     pub fn path(&self, index: usize) -> Option<&Path> {
         self.bases.get(index).map(|(path, _)| path)

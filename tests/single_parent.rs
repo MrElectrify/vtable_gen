@@ -80,7 +80,7 @@ fn unimpl_method() {
     let b = Bar::new(2.5, 3.5);
 
     // ensure that unimplemented methods panic
-    (unsafe { &*(b.vfptr as *const BarVTable) }.base_foo.unimpl_0)()
+    (unsafe { &*(b.vfptr as *const FooVTable) }.unimpl_0)()
 }
 
 #[test]

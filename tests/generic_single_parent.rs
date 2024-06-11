@@ -83,9 +83,7 @@ fn unimpl_method() {
     let b = Bar::<23, u32>::new(2, 3);
 
     // ensure that unimplemented methods panic
-    (unsafe { &*(b.vfptr as *const BarVTable<23, u32>) }
-        .base_foo
-        .unimpl_0)()
+    (unsafe { &*(b.vfptr as *const FooVTable<u32>) }.unimpl_0)()
 }
 
 #[test]

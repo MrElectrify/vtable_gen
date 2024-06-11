@@ -6,7 +6,7 @@ use syn::{
 };
 
 use crate::class::make_base_name;
-use crate::class::vtable::make_vtable_static;
+use crate::class::vtable::{make_vtable_ident, make_vtable_static};
 use crate::parse::{CppDef, ItemClass};
 use crate::util::extract_ident;
 
@@ -75,7 +75,7 @@ fn gen_stub(class: &ItemClass, func: &ImplItemFn) -> ImplItemFn {
 
     let output = quote! {
         #vis #unsafety #abi fn #ident(#args) #output {
-            Self::#proxy_ident(#(#arg_names,)* &#static_ident as *const _ as usize)
+            Self::#proxy_ident(#(#arg_names,)* &#static_ident)
         }
     };
     syn::parse(output.into()).expect("failed to generate stub")
@@ -133,12 +133,21 @@ fn process_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
     }
 
     // add the vtable input parameter
-    func.sig.inputs.push(parse_quote!(vfptr: usize));
+    let generic_args = class.generic_args();
+    let vtable_ty = make_vtable_ident(&class.ident);
+    func.sig
+        .inputs
+        .push(parse_quote!(vfptr: &'static #vtable_ty #generic_args));
 
     // add the vtable instantiation
     let fn_ident = &func.sig.ident;
     for expr in instantiations {
-        if let Some(base_ty) = class.bases.ident(0) {
+        for base_ty in class
+            .bases
+            .bases
+            .iter()
+            .map(|(base, _)| extract_ident(base))
+        {
             // find the method that is called on the base type
             let base_ident = make_base_name(base_ty);
             let field_setter = expr
@@ -164,10 +173,12 @@ fn process_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
             let fn_segment = fn_path.path.segments.last_mut().unwrap_or_else(|| panic!("expected function call to instantiate {base_ident} in {fn_ident} to contain segments"));
             fn_segment.ident = make_ctor_call(&fn_segment.ident);
 
-            // add the `vtbl` member
-            call.args.push(parse_quote!(vfptr));
-        } else {
-            expr.fields.insert(0, parse_quote! { vfptr })
+            // add the `vfptr` member
+            call.args.push(parse_quote!(&vfptr.#base_ident));
+        }
+
+        if class.bases.is_empty() {
+            expr.fields.insert(0, parse_quote!(vfptr))
         }
     }
 

@@ -4,7 +4,7 @@ use syn::{Attribute, Field, FieldMutability, File, Meta, parse_quote, Token, Typ
 use syn::punctuated::Punctuated;
 
 use crate::class::make_base_name;
-use crate::class::vtable::make_vtable_static;
+use crate::class::vtable::{make_vtable_ident, make_vtable_static};
 use crate::parse::ItemClass;
 
 /// Generates the base structure.
@@ -38,6 +38,8 @@ pub fn gen_struct(class: &ItemClass) -> File {
     // add the vtable if there aren't any bases and there are virtuals.
     if class.bases.bases.is_empty() && !class.body.virtuals.is_empty() {
         // push the VTable member
+        let generic_args = class.generic_args();
+        let vtable_ty = make_vtable_ident(ident);
         fields.insert(
             0,
             Field {
@@ -46,7 +48,7 @@ pub fn gen_struct(class: &ItemClass) -> File {
                 mutability: FieldMutability::None,
                 ident: Some(format_ident!("vfptr")),
                 colon_token: None,
-                ty: parse_quote!(usize),
+                ty: parse_quote!(&'static #vtable_ty #generic_args),
             },
         )
     }
@@ -138,14 +140,15 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
     // either delegate the vtable up another level or set it directly
     let vtbl_initializer = if let Some(base_ty) = class.bases.ident(0) {
         let base_ident = make_base_name(base_ty);
-        quote! { #base_ident: #base_ty::_default_with_vtable(vfptr) }
+        quote! { #base_ident: #base_ty::_default_with_vtable(&vfptr.#base_ident) }
     } else {
         quote! { vfptr }
     };
 
+    let vtable_ty = make_vtable_ident(&class.ident);
     let output = quote! {
         impl #generics #ident #generic_args {
-            fn _default_with_vtable(vfptr: usize) -> Self {
+            fn _default_with_vtable(vfptr: &'static #vtable_ty #generic_args) -> Self {
                 Self {
                     #vtbl_initializer,
                     #(#arg_names: Default::default()),*
@@ -155,7 +158,7 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
 
         impl #generics Default for #ident #generic_args {
             fn default() -> Self {
-                Self::_default_with_vtable(&#vtable_static_ident as *const _ as usize)
+                Self::_default_with_vtable(&#vtable_static_ident)
             }
         }
     };
