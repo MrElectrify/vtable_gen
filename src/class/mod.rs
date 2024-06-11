@@ -1,7 +1,8 @@
 use convert_case::{Case, Casing};
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{FnArg, GenericParam, parse_macro_input, parse_quote, PatType};
+use syn::{FnArg, GenericParam, parse_macro_input, parse_quote, Path, PatType, Token};
+use syn::punctuated::Punctuated;
 
 use crate::parse::{CppDef, ItemClass};
 
@@ -16,11 +17,14 @@ mod vtable;
 pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut def = parse_macro_input!(input as CppDef);
 
+    // extract `gen_base`
+    let additional_bases = extract_additional_bases(&mut def.class);
+
     // enforces static trait bounds (required for VTable)
     enforce_static(&mut def.class);
 
     // generate the base rust structure
-    let stct = stct::gen_struct(&def.class);
+    let stct = stct::gen_struct(&def.class, &additional_bases);
 
     // generate the bridge between the class and its virtuals before standardizing the ABI
     let bridge = bridge::gen_bridge(&def.class);
@@ -32,10 +36,10 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let trt = trt::gen_trait(&def.class);
 
     // generate the VTable structure
-    let vtable = vtable::gen_vtable(&def.class);
+    let vtable = vtable::gen_vtable(&def.class, &additional_bases);
 
     // generate implementation hooks
-    let impl_hooks = imp::gen_hooks(&def);
+    let impl_hooks = imp::gen_hooks(&def, &additional_bases);
 
     // generate access helpers
     let access_helpers = base_access::gen_base_helpers(&def.class);
@@ -58,6 +62,27 @@ fn enforce_static(class: &mut ItemClass) {
             ty.bounds.push(parse_quote!('static))
         }
     }
+}
+
+/// Extracts additional bases that are explicitly listed.
+fn extract_additional_bases(class: &mut ItemClass) -> Vec<Path> {
+    // see if there's a `derive` attribute
+    let Some(gen_base_idx) = class
+        .attrs
+        .iter()
+        .position(|attr| attr.path().is_ident("gen_base"))
+    else {
+        return Vec::new();
+    };
+    let gen_base_attr = class.attrs.remove(gen_base_idx);
+
+    // parse out bases
+    gen_base_attr
+        .parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)
+        .expect("Failed to parse repr")
+        .iter()
+        .cloned()
+        .collect()
 }
 
 /// Makes the base identifier for a type.

@@ -2,7 +2,8 @@ use itertools::Itertools;
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use syn::{
-    Expr, ExprStruct, FnArg, ImplItem, ImplItemFn, ItemImpl, Member, parse_quote, Stmt, Type,
+    Expr, ExprStruct, FnArg, ImplItem, ImplItemFn, ItemImpl, Member, parse_quote, Path,
+    PathArguments, Stmt, Type,
 };
 
 use crate::class::make_base_name;
@@ -11,7 +12,7 @@ use crate::parse::{CppDef, ItemClass};
 use crate::util::{extract_ident, last_segment};
 
 /// Generates hooked versions of all implemented methods that construct instances.
-pub fn gen_hooks(def: &CppDef) -> Option<ItemImpl> {
+pub fn gen_hooks(def: &CppDef, additional_bases: &[Path]) -> Option<ItemImpl> {
     let mut imp = def.new_impl.clone()?;
     let ident = &def.class.ident;
 
@@ -26,16 +27,20 @@ pub fn gen_hooks(def: &CppDef) -> Option<ItemImpl> {
     );
 
     // generate new implementations (and pass through old ones, of course)
-    imp.items = gen_impl_items(&def.class, imp.items);
+    imp.items = gen_impl_items(&def.class, imp.items, additional_bases);
 
     Some(imp)
 }
 
 /// Processes a function; if it needs a hook, 2 functions will be generated. Otherwise,
 /// we panic. Standing functions should be kept outside the macro.
-pub fn hook_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
+pub fn hook_fn(
+    class: &ItemClass,
+    mut func: ImplItemFn,
+    additional_bases: &[Path],
+) -> Vec<ImplItemFn> {
     // generate the stub function
-    let stub_fn = gen_stub(class, &func);
+    let stub_fn = gen_stub(class, &func, additional_bases);
 
     // look for all struct instantiations. this is a simple approach that only looks for
     // local declarations and raw expressions
@@ -64,7 +69,12 @@ pub fn hook_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
 
     // the secondary base classes
     let generic_args = class.generic_args();
-    let secondary_base_types = class.bases.paths().skip(1).collect_vec();
+    let secondary_base_types = class
+        .bases
+        .paths()
+        .skip(1)
+        .chain(additional_bases)
+        .collect_vec();
     let secondary_base_idents = secondary_base_types
         .iter()
         .cloned()
@@ -75,27 +85,16 @@ pub fn hook_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
         .cloned()
         .map(make_base_name)
         .collect_vec();
-    let secondary_base_vtable_idents = secondary_base_idents
-        .iter()
-        .cloned()
-        .map(make_vtable_ident)
-        .collect_vec();
-    let secondary_base_vtable_generics = secondary_base_types
-        .iter()
-        .cloned()
-        .map(|ty| &last_segment(ty).arguments)
-        .collect_vec();
 
     // add the vtable input parameters
     let vtable_ty = make_vtable_ident(&class.ident);
     func.sig
         .inputs
         .push(parse_quote!(vfptr: &'static #vtable_ty #generic_args));
-    for ((base_param, vtable_ident), vtable_generics) in secondary_base_params
-        .iter()
-        .zip(&secondary_base_vtable_idents)
-        .zip(&secondary_base_vtable_generics)
-    {
+    for (base_ty, base_param) in secondary_base_types.iter().zip(&secondary_base_params) {
+        let base_ident = extract_ident(base_ty);
+        let vtable_ident = make_vtable_ident(base_ident);
+        let vtable_generics = &last_segment(base_ty).arguments;
         func.sig
             .inputs
             .push(parse_quote!(#base_param: &'static #vtable_ident #vtable_generics))
@@ -139,6 +138,22 @@ pub fn hook_fn(class: &ItemClass, mut func: ImplItemFn) -> Vec<ImplItemFn> {
             // add the `vfptr` member
             if idx == 0 {
                 call.args.push(parse_quote!(&vfptr.#base_ident));
+                // add additional params
+                // TODO: this will only work if only the primary base is multiply-inherited.
+                // we need to pin additional bases to each base type
+                for additional_base in additional_bases {
+                    let last_segment = last_segment(additional_base);
+                    let base_generics = if let PathArguments::AngleBracketed(def_generics) =
+                        &last_segment.arguments
+                    {
+                        def_generics.clone()
+                    } else {
+                        parse_quote!(<>)
+                    };
+                    let vtable_static =
+                        make_vtable_static(&class.ident, &last_segment.ident, &base_generics);
+                    call.args.push(parse_quote!(&#vtable_static))
+                }
             } else {
                 let param = &secondary_base_params[idx - 1];
                 call.args.push(parse_quote!(#param))
@@ -162,11 +177,15 @@ pub fn make_ctor_call(ident: &Ident) -> Ident {
 }
 
 /// Generates all implementation items.
-fn gen_impl_items(class: &ItemClass, items: Vec<ImplItem>) -> Vec<ImplItem> {
+fn gen_impl_items(
+    class: &ItemClass,
+    items: Vec<ImplItem>,
+    additional_bases: &[Path],
+) -> Vec<ImplItem> {
     items
         .into_iter()
         .flat_map(|item| match item {
-            ImplItem::Fn(item_fn) => hook_fn(class, item_fn)
+            ImplItem::Fn(item_fn) => hook_fn(class, item_fn, additional_bases)
                 .into_iter()
                 .map(ImplItem::Fn)
                 .collect(),
@@ -177,7 +196,7 @@ fn gen_impl_items(class: &ItemClass, items: Vec<ImplItem>) -> Vec<ImplItem> {
 
 /// Generates a stub of a function that calls the original implementation with the current
 /// class's vtable.
-fn gen_stub(class: &ItemClass, func: &ImplItemFn) -> ImplItemFn {
+fn gen_stub(class: &ItemClass, func: &ImplItemFn, additional_bases: &[Path]) -> ImplItemFn {
     // create a proxy function
     let vis = &func.vis;
     let abi = &func.sig.abi;
@@ -199,7 +218,12 @@ fn gen_stub(class: &ItemClass, func: &ImplItemFn) -> ImplItemFn {
     let static_ident = make_vtable_static(&class.ident, &class.ident, &class.generic_args());
 
     // the secondary base classes
-    let secondary_base_types = class.bases.paths().skip(1).collect_vec();
+    let secondary_base_types = class
+        .bases
+        .paths()
+        .skip(1)
+        .chain(additional_bases)
+        .collect_vec();
     let secondary_base_idents = secondary_base_types
         .iter()
         .map(|base_ident| {

@@ -17,7 +17,7 @@ use crate::parse::{ItemClass, Virtual};
 use crate::util::{extract_ident, last_segment};
 
 /// Generates a VTable for the class.
-pub fn gen_vtable(class: &ItemClass) -> File {
+pub fn gen_vtable(class: &ItemClass, additional_bases: &[Path]) -> File {
     let virtuals = sort_virtuals(class);
 
     // generate the vtable structure
@@ -27,7 +27,7 @@ pub fn gen_vtable(class: &ItemClass) -> File {
     let mcro = gen_vtable_macro(class, &virtuals);
 
     // generate the vtable static
-    let stc = gen_vtable_static(class);
+    let stc = gen_vtable_static(class, additional_bases);
 
     syn::parse(
         quote! {
@@ -171,7 +171,7 @@ fn gen_vtable_static_for(
     base_generics: &AngleBracketedGenericArguments,
 ) -> ItemConst {
     let macro_ident = make_vtable_macro_ident(vtable_ty);
-    let vtable_static_path = make_vtable_static(class_ident, vtable_ty, &base_generics);
+    let vtable_static_path = make_vtable_static(class_ident, vtable_ty, base_generics);
     let vtable_static_ident = extract_ident(&vtable_static_path);
     let vtable_struct_ident = make_vtable_ident(vtable_ty);
 
@@ -184,7 +184,7 @@ fn gen_vtable_static_for(
 }
 
 /// Generates the default VTable for the class.
-fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
+fn gen_vtable_static(class: &ItemClass, additional_bases: &[Path]) -> ItemImpl {
     let class_ident = &class.ident;
     let class_vis = &class.vis;
     let generics = &class.generics;
@@ -200,8 +200,12 @@ fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
     )];
 
     // generate secondary vtables
-    // the secondary base classes
-    let secondary_base_types = class.bases.paths().skip(1).collect_vec();
+    let secondary_base_types = class
+        .bases
+        .paths()
+        .skip(1)
+        .chain(additional_bases)
+        .collect_vec();
     for secondary_base_type in &secondary_base_types {
         let last_segment = last_segment(secondary_base_type);
         let base_ident = &last_segment.ident;

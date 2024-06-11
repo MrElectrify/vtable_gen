@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Field, FieldMutability, FieldValue, File, Meta, parse_quote, Token, Visibility,
+    Attribute, Field, FieldMutability, FieldValue, File, Meta, parse_quote, Path, Token, Visibility,
 };
 use syn::punctuated::Punctuated;
 
@@ -10,10 +10,10 @@ use crate::class::vtable::make_vtable_ident;
 use crate::parse::ItemClass;
 
 /// Generates the base structure.
-pub fn gen_struct(class: &ItemClass) -> File {
+pub fn gen_struct(class: &ItemClass, additional_bases: &[Path]) -> File {
     let mut attrs = class.attrs.clone();
 
-    let default_impl = intercept_default(class, &mut attrs);
+    let default_impl = intercept_default(class, &mut attrs, additional_bases);
 
     let vis = &class.vis;
     let ident = &class.ident;
@@ -87,7 +87,11 @@ fn has_repr_c(attrs: &[Attribute]) -> bool {
 }
 
 /// Intercepts `#[derive(Default)]` and implements it ourselves
-fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File> {
+fn intercept_default(
+    class: &ItemClass,
+    attrs: &mut [Attribute],
+    additional_bases: &[Path],
+) -> Option<File> {
     // see if there's a `derive` attribute
     let derive_attr = attrs
         .iter_mut()
@@ -139,7 +143,7 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
     let generics = &class.generics;
     let generic_args = class.generic_args();
     let ident = &class.ident;
-    let [impl_fn, default_fn] = &imp::hook_fn(class, default_fn)[..] else {
+    let [impl_fn, default_fn] = &imp::hook_fn(class, default_fn, additional_bases)[..] else {
         unreachable!()
     };
     let output = quote! {
