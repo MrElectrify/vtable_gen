@@ -17,6 +17,11 @@ pub struct BaseClasses {
 }
 
 impl BaseClasses {
+    /// Returns an iterator over all identifiers.
+    pub fn idents(&self) -> impl Iterator<Item = &Ident> {
+        self.paths().map(|path| &last_segment(path).ident)
+    }
+
     /// Return the identifier of the base at `index`.
     pub fn ident(&self, index: usize) -> Option<&Ident> {
         self.path(index).map(|path| &last_segment(path).ident)

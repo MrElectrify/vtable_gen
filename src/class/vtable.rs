@@ -5,8 +5,8 @@ use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    AngleBracketedGenericArguments, Field, FieldMutability, File, GenericArgument, ItemConst,
-    ItemImpl, ItemMacro, ItemStruct, parse_quote, Path, PathArguments, Visibility,
+    AngleBracketedGenericArguments, Field, FieldMutability, File, ItemConst, ItemImpl, ItemMacro,
+    ItemStruct, parse_quote, Path, PathArguments, Visibility,
 };
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
@@ -165,19 +165,19 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
 /// Generates a VTable static for a type.
 fn gen_vtable_static_for(
     class_ident: &Ident,
+    class_generics: &AngleBracketedGenericArguments,
     vtable_ty: &Ident,
     vis: &Visibility,
-    generic_args: &[GenericArgument],
+    base_generics: &AngleBracketedGenericArguments,
 ) -> ItemConst {
-    let generic_args: AngleBracketedGenericArguments = parse_quote!(<#(#generic_args),*>);
     let macro_ident = make_vtable_macro_ident(vtable_ty);
-    let vtable_static_path = make_vtable_static(class_ident, vtable_ty, &generic_args);
+    let vtable_static_path = make_vtable_static(class_ident, vtable_ty, &base_generics);
     let vtable_static_ident = extract_ident(&vtable_static_path);
     let vtable_struct_ident = make_vtable_ident(vtable_ty);
 
     let output = quote! {
-        #vis const #vtable_static_ident: #vtable_struct_ident #generic_args =
-            #macro_ident!(#class_ident #generic_args, #generic_args);
+        #vis const #vtable_static_ident: #vtable_struct_ident #base_generics =
+            #macro_ident!(#class_ident #class_generics, #base_generics);
     };
     syn::parse(output.into())
         .unwrap_or_else(|e| panic!("failed to generate vtable {vtable_ty} for {class_ident}: {e}"))
@@ -193,9 +193,10 @@ fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
     // generate the primary vtable
     let mut consts = vec![gen_vtable_static_for(
         class_ident,
+        &generic_args,
         class_ident,
         class_vis,
-        &generic_args.args.iter().cloned().collect_vec(),
+        &generic_args,
     )];
 
     // generate secondary vtables
@@ -204,18 +205,19 @@ fn gen_vtable_static(class: &ItemClass) -> ItemImpl {
     for secondary_base_type in &secondary_base_types {
         let last_segment = last_segment(secondary_base_type);
         let base_ident = &last_segment.ident;
-        let generics = if let PathArguments::AngleBracketed(def_generics) = &last_segment.arguments
-        {
-            def_generics.clone()
-        } else {
-            parse_quote!(<>)
-        };
+        let base_generics =
+            if let PathArguments::AngleBracketed(def_generics) = &last_segment.arguments {
+                def_generics.clone()
+            } else {
+                parse_quote!(<>)
+            };
 
         consts.push(gen_vtable_static_for(
             class_ident,
+            &generic_args,
             base_ident,
             class_vis,
-            &generics.args.iter().cloned().collect_vec(),
+            &base_generics,
         ))
     }
 

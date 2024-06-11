@@ -1,12 +1,13 @@
 use itertools::Itertools;
 use quote::{format_ident, quote};
-use syn::{Attribute, Field, FieldMutability, File, Meta, parse_quote, Token, Visibility};
+use syn::{
+    Attribute, Field, FieldMutability, FieldValue, File, Meta, parse_quote, Token, Visibility,
+};
 use syn::punctuated::Punctuated;
 
-use crate::class::make_base_name;
-use crate::class::vtable::{make_vtable_ident, make_vtable_static};
+use crate::class::{imp, make_base_name};
+use crate::class::vtable::make_vtable_ident;
 use crate::parse::ItemClass;
-use crate::util::extract_ident;
 
 /// Generates the base structure.
 pub fn gen_struct(class: &ItemClass) -> File {
@@ -114,62 +115,40 @@ fn intercept_default(class: &ItemClass, attrs: &mut [Attribute]) -> Option<File>
     // replace the old meta
     derive_attr.meta = parse_quote!(derive(#new_meta));
 
-    // generate the implementation
-    let arg_names = class
+    // generate the implementation. start with a naive implementation
+    let fields: Vec<FieldValue> = class
         .body
         .fields
         .iter()
         .filter_map(|field| field.ident.as_ref())
+        .cloned()
+        .map(|field_name| parse_quote!(#field_name: Default::default()))
+        .chain(class.bases.idents().map(|base_ty| {
+            let base_ident = make_base_name(base_ty);
+            parse_quote!(#base_ident: #base_ty::default())
+        }))
         .collect_vec();
 
-    let ident = &class.ident;
+    let default_fn = parse_quote! {
+        fn default() -> Self {
+            Self {
+                #(#fields),*
+            }
+        }
+    };
     let generics = &class.generics;
     let generic_args = class.generic_args();
-    let vtable_static_ident = make_vtable_static(ident, ident, &generic_args);
-    let generic_args = class.generic_args();
-
-    // the secondary base classes
-    let secondary_base_idents = class.bases.paths().skip(1).map(extract_ident).collect_vec();
-    let secondary_base_params = secondary_base_idents
-        .iter()
-        .cloned()
-        .map(make_base_name)
-        .collect_vec();
-    let secondary_base_vtable_types = secondary_base_idents
-        .iter()
-        .cloned()
-        .map(make_vtable_ident)
-        .collect_vec();
-    let secondary_base_statics = secondary_base_idents
-        .iter()
-        .map(|base_ident| make_vtable_static(ident, base_ident, &generic_args))
-        .collect_vec();
-
-    // either delegate the vtable up another level or set it directly
-    let vtbl_initializer = if let Some(base_ty) = class.bases.ident(0) {
-        let primary_base_ident = make_base_name(base_ty);
-        quote! { #primary_base_ident: #base_ty::_default_with_vtable(&vfptr.#primary_base_ident) }
-    } else {
-        quote! { vfptr }
+    let ident = &class.ident;
+    let [impl_fn, default_fn] = &imp::hook_fn(class, default_fn)[..] else {
+        unreachable!()
     };
-
-    let vtable_ty = make_vtable_ident(&class.ident);
     let output = quote! {
         impl #generics #ident #generic_args {
-            fn _default_with_vtable(vfptr: &'static #vtable_ty #generic_args,
-                #(#secondary_base_params: &'static #secondary_base_vtable_types),*) -> Self {
-                Self {
-                    #vtbl_initializer,
-                    #(#secondary_base_params: #secondary_base_idents::_default_with_vtable(#secondary_base_params),)*
-                    #(#arg_names: Default::default()),*
-                }
-            }
+            #impl_fn
         }
 
         impl #generics Default for #ident #generic_args {
-            fn default() -> Self {
-                Self::_default_with_vtable(&#vtable_static_ident, #(&#secondary_base_statics),*)
-            }
+            #default_fn
         }
     };
     Some(syn::parse(output.into()).expect("failed to generate default implementation"))
