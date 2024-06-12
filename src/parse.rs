@@ -290,6 +290,18 @@ impl ToTokens for ItemClass {
     }
 }
 
+impl ToTokens for SecondaryBase {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.target.to_tokens(tokens);
+        self.eq.to_tokens(tokens);
+        self.bracket.surround(tokens, |tokens| {
+            for base in &self.bases {
+                base.to_tokens(tokens);
+            }
+        })
+    }
+}
+
 impl ToTokens for Virtual {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         self.virtual_token.to_tokens(tokens);

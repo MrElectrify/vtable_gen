@@ -17,7 +17,11 @@ use crate::parse::{ItemClass, Virtual};
 use crate::util::{collect_secondary_bases, extract_ident, last_segment};
 
 /// Generates a VTable for the class.
-pub fn gen_vtable(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>) -> File {
+pub fn gen_vtable(
+    class: &ItemClass,
+    additional_bases: &HashMap<Path, Vec<Path>>,
+    no_impl: bool,
+) -> File {
     let virtuals = sort_virtuals(class);
 
     // generate the vtable structure
@@ -27,7 +31,11 @@ pub fn gen_vtable(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>
     let mcro = gen_vtable_macro(class, &virtuals);
 
     // generate the vtable static
-    let stc = gen_vtable_static(class, additional_bases);
+    let stc = if !no_impl {
+        Some(gen_vtable_static(class, additional_bases))
+    } else {
+        None
+    };
 
     syn::parse(
         quote! {

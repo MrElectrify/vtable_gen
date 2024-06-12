@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use convert_case::{Case, Casing};
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{FnArg, GenericParam, parse_macro_input, parse_quote, Path, PatType, Token};
+use syn::{Attribute, FnArg, GenericParam, parse_macro_input, parse_quote, Path, PatType, Token};
 use syn::punctuated::Punctuated;
 
 use crate::parse::{CppDef, ItemClass, SecondaryBase};
@@ -22,6 +22,9 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     // extract `gen_base`
     let additional_bases = extract_additional_bases(&mut def.class);
 
+    // extract `no_impl`
+    let no_impl = extract_no_impl(&mut def.class.attrs);
+
     // enforces static trait bounds (required for VTable)
     enforce_static(&mut def.class);
 
@@ -35,10 +38,14 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     standardize_virtuals(&mut def.class);
 
     // generate the trait
-    let trt = trt::gen_trait(&def.class);
+    let trt = if !no_impl {
+        Some(trt::gen_trait(&def.class))
+    } else {
+        None
+    };
 
     // generate the VTable structure
-    let vtable = vtable::gen_vtable(&def.class, &additional_bases);
+    let vtable = vtable::gen_vtable(&def.class, &additional_bases, no_impl);
 
     // generate implementation hooks
     let impl_hooks = imp::gen_hooks(&def, &additional_bases);
@@ -85,6 +92,19 @@ fn extract_additional_bases(class: &mut ItemClass) -> HashMap<Path, Vec<Path>> {
         .iter()
         .map(|expr| (expr.target.clone(), expr.bases.iter().cloned().collect()))
         .collect()
+}
+
+/// Returns true if trait implementations should be skipped.
+fn extract_no_impl(attrs: &mut Vec<Attribute>) -> bool {
+    if let Some(no_impl) = attrs
+        .iter()
+        .position(|attr| attr.path().is_ident("no_impl"))
+    {
+        attrs.remove(no_impl);
+        true
+    } else {
+        false
+    }
 }
 
 /// Makes the base identifier for a type.
