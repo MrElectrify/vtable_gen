@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use convert_case::{Case, Casing};
 use itertools::Itertools;
@@ -14,10 +14,10 @@ use syn::token::Comma;
 use crate::class::make_base_name;
 use crate::class::trt::make_virtuals;
 use crate::parse::{ItemClass, Virtual};
-use crate::util::{extract_ident, last_segment};
+use crate::util::{collect_secondary_bases, extract_ident, last_segment};
 
 /// Generates a VTable for the class.
-pub fn gen_vtable(class: &ItemClass, additional_bases: &[Path]) -> File {
+pub fn gen_vtable(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>) -> File {
     let virtuals = sort_virtuals(class);
 
     // generate the vtable structure
@@ -184,7 +184,7 @@ fn gen_vtable_static_for(
 }
 
 /// Generates the default VTable for the class.
-fn gen_vtable_static(class: &ItemClass, additional_bases: &[Path]) -> ItemImpl {
+fn gen_vtable_static(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>) -> ItemImpl {
     let class_ident = &class.ident;
     let class_vis = &class.vis;
     let generics = &class.generics;
@@ -200,12 +200,7 @@ fn gen_vtable_static(class: &ItemClass, additional_bases: &[Path]) -> ItemImpl {
     )];
 
     // generate secondary vtables
-    let secondary_base_types = class
-        .bases
-        .paths()
-        .skip(1)
-        .chain(additional_bases)
-        .collect_vec();
+    let secondary_base_types = collect_secondary_bases(class, additional_bases);
     for secondary_base_type in &secondary_base_types {
         let last_segment = last_segment(secondary_base_type);
         let base_ident = &last_segment.ident;

@@ -1,8 +1,8 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::ToTokens;
 use syn::{
-    AngleBracketedGenericArguments, Attribute, braced, Field, GenericParam, Generics, ItemImpl,
-    LitInt, parenthesized, parse_quote, Path, Signature, token, Token, Visibility,
+    AngleBracketedGenericArguments, Attribute, braced, bracketed, Field, GenericParam,
+    Generics, ItemImpl, LitInt, parenthesized, parse_quote, Path, Signature, token, Token, Visibility,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -169,6 +169,31 @@ impl Parse for CppDef {
             } else {
                 None
             },
+        })
+    }
+}
+
+/// A secondary base class.
+pub struct SecondaryBase {
+    pub target: Path,
+    pub eq: Token![=],
+    pub bracket: token::Bracket,
+    pub bases: Punctuated<Path, Token![,]>,
+}
+
+impl Parse for SecondaryBase {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let target = input.parse()?;
+        let eq = input.parse()?;
+
+        let contents;
+        let bracket = bracketed!(contents in input);
+
+        Ok(Self {
+            target,
+            eq,
+            bracket,
+            bases: contents.parse_terminated(Path::parse, Token![,])?,
         })
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 use quote::{format_ident, quote};
 use syn::{
@@ -10,7 +12,7 @@ use crate::class::vtable::make_vtable_ident;
 use crate::parse::ItemClass;
 
 /// Generates the base structure.
-pub fn gen_struct(class: &ItemClass, additional_bases: &[Path]) -> File {
+pub fn gen_struct(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>) -> File {
     let mut attrs = class.attrs.clone();
 
     let default_impl = intercept_default(class, &mut attrs, additional_bases);
@@ -90,7 +92,7 @@ fn has_repr_c(attrs: &[Attribute]) -> bool {
 fn intercept_default(
     class: &ItemClass,
     attrs: &mut [Attribute],
-    additional_bases: &[Path],
+    additional_bases: &HashMap<Path, Vec<Path>>,
 ) -> Option<File> {
     // see if there's a `derive` attribute
     let derive_attr = attrs

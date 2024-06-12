@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use convert_case::{Case, Casing};
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use syn::{FnArg, GenericParam, parse_macro_input, parse_quote, Path, PatType, Token};
 use syn::punctuated::Punctuated;
 
-use crate::parse::{CppDef, ItemClass};
+use crate::parse::{CppDef, ItemClass, SecondaryBase};
 
 mod base_access;
 mod bridge;
@@ -65,23 +67,23 @@ fn enforce_static(class: &mut ItemClass) {
 }
 
 /// Extracts additional bases that are explicitly listed.
-fn extract_additional_bases(class: &mut ItemClass) -> Vec<Path> {
+fn extract_additional_bases(class: &mut ItemClass) -> HashMap<Path, Vec<Path>> {
     // see if there's a `derive` attribute
     let Some(gen_base_idx) = class
         .attrs
         .iter()
         .position(|attr| attr.path().is_ident("gen_base"))
     else {
-        return Vec::new();
+        return HashMap::new();
     };
     let gen_base_attr = class.attrs.remove(gen_base_idx);
 
     // parse out bases
     gen_base_attr
-        .parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)
+        .parse_args_with(Punctuated::<SecondaryBase, Token![,]>::parse_terminated)
         .expect("Failed to parse repr")
         .iter()
-        .cloned()
+        .map(|expr| (expr.target.clone(), expr.bases.iter().cloned().collect()))
         .collect()
 }
 

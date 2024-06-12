@@ -81,7 +81,7 @@ impl CVirtuals for C {
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_base(B)]
+    #[gen_base(C = [B])]
     struct D: C {
         d: u32,
 
@@ -133,42 +133,42 @@ fn layout() {
 
 #[test]
 fn basic() {
-    let c = D::new(1, 2, 3, 4);
+    let d = D::new(1, 2, 3, 4);
 
     // manually select the implementation
-    assert_eq!(<A as AVirtuals>::a(&c), 1);
-    assert_eq!(<C as AVirtuals>::a(&c), 2);
-    assert_eq!(<D as AVirtuals>::a(&c), 3);
-    assert_eq!(<B as BVirtuals>::b(c.as_ref().as_ref()), 2);
-    assert_eq!(<C as BVirtuals>::b(c.as_ref().as_ref()), 3);
-    assert_eq!(<D as BVirtuals>::b(c.as_ref().as_ref()), 4);
-    assert_eq!(<C as CVirtuals>::c(&c), 6);
-    assert_eq!(<D as CVirtuals>::c(&c), 4);
-    assert_eq!(<D as DVirtuals>::d(&c), 4);
+    assert_eq!(<A as AVirtuals>::a(&d), 1);
+    assert_eq!(<C as AVirtuals>::a(&d), 2);
+    assert_eq!(<D as AVirtuals>::a(&d), 3);
+    assert_eq!(<B as BVirtuals>::b(d.as_ref().as_ref()), 2);
+    assert_eq!(<C as BVirtuals>::b(d.as_ref().as_ref()), 3);
+    assert_eq!(<D as BVirtuals>::b(d.as_ref().as_ref()), 4);
+    assert_eq!(<C as CVirtuals>::c(&d), 6);
+    assert_eq!(<D as CVirtuals>::c(&d), 4);
+    assert_eq!(<D as DVirtuals>::d(&d), 4);
     // call through the vtables
-    assert_eq!(c.a(), 3);
-    assert_eq!(<C as AsRef<B>>::as_ref(&c).b(), 4);
-    assert_eq!(c.c(), 4);
-    assert_eq!(c.d(), 4);
+    assert_eq!(d.a(), 3);
+    assert_eq!(<C as AsRef<B>>::as_ref(&d).b(), 4);
+    assert_eq!(d.c(), 4);
+    assert_eq!(d.d(), 4);
 }
 
 #[test]
 fn default() {
-    let c = D::default();
+    let d = D::default();
 
     // manually select the implementation
-    assert_eq!(<A as AVirtuals>::a(&c), 0);
-    assert_eq!(<C as AVirtuals>::a(&c), 1);
-    assert_eq!(<D as AVirtuals>::a(&c), 2);
-    assert_eq!(<B as BVirtuals>::b(c.as_ref().as_ref()), 0);
-    assert_eq!(<C as BVirtuals>::b(c.as_ref().as_ref()), 1);
-    assert_eq!(<D as BVirtuals>::b(c.as_ref().as_ref()), 2);
-    assert_eq!(<C as CVirtuals>::c(&c), 0);
-    assert_eq!(<D as CVirtuals>::c(&c), 0);
-    assert_eq!(<D as DVirtuals>::d(&c), 0);
+    assert_eq!(<A as AVirtuals>::a(&d), 0);
+    assert_eq!(<C as AVirtuals>::a(&d), 1);
+    assert_eq!(<D as AVirtuals>::a(&d), 2);
+    assert_eq!(<B as BVirtuals>::b(d.as_ref().as_ref()), 0);
+    assert_eq!(<C as BVirtuals>::b(d.as_ref().as_ref()), 1);
+    assert_eq!(<D as BVirtuals>::b(d.as_ref().as_ref()), 2);
+    assert_eq!(<C as CVirtuals>::c(&d), 0);
+    assert_eq!(<D as CVirtuals>::c(&d), 0);
+    assert_eq!(<D as DVirtuals>::d(&d), 0);
     // call through the vtables
-    assert_eq!(c.a(), 2);
-    assert_eq!(<C as AsRef<B>>::as_ref(&c).b(), 2);
-    assert_eq!(c.c(), 0);
-    assert_eq!(c.d(), 0);
+    assert_eq!(d.a(), 2);
+    assert_eq!(<C as AsRef<B>>::as_ref(&d).b(), 2);
+    assert_eq!(d.c(), 0);
+    assert_eq!(d.d(), 0);
 }
