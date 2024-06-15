@@ -1,13 +1,16 @@
 use convert_case::{Case, Casing};
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
-use syn::{Attribute, File, FnArg, GenericParam, parse_macro_input, parse_quote, PatType};
+use syn::{
+    Attribute, File, FnArg, GenericArgument, GenericParam, parse_macro_input, parse_quote, PathArguments,
+    PatType, Type,
+};
 
 use crate::class::extractor::AttributeExtractor;
 use crate::class::generic_base::GenericBase;
 use crate::class::secondary_base::SecondaryBase;
 use crate::parse::{CppDef, ItemClass};
-use crate::util::{extract_ident, remove_punctuated};
+use crate::util::{extract_ident, last_segment_mut, remove_punctuated};
 
 mod base_access;
 mod bridge;
@@ -50,8 +53,30 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
                 def.class.generics.params =
                     remove_punctuated(&def.class.generics.params, |param| match param {
                         GenericParam::Type(ty) => ty.ident != generic_base.base,
-                        _ => false,
+                        _ => true,
                     });
+
+                // remove the generics from the bases
+                for (base, _) in &mut def.class.bases.bases {
+                    let last_segment = last_segment_mut(base);
+                    if let PathArguments::AngleBracketed(args) = &mut last_segment.arguments {
+                        args.args = remove_punctuated(&args.args, |arg| match arg {
+                            GenericArgument::Type(Type::Path(ty)) => {
+                                if extract_ident(&ty.path) == &generic_base.base {
+                                    last_segment.ident = format_ident!(
+                                        "{}_{}",
+                                        last_segment.ident,
+                                        extract_ident(&generic_base.repl)
+                                    );
+                                    return false;
+                                }
+
+                                true
+                            }
+                            _ => true,
+                        });
+                    }
+                }
             }
 
             let def = generate_class(def.clone());

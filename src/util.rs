@@ -39,6 +39,10 @@ pub fn last_segment(path: &Path) -> &PathSegment {
     path.segments.last().expect("expected path segments")
 }
 
+pub fn last_segment_mut(path: &mut Path) -> &mut PathSegment {
+    path.segments.last_mut().expect("expected path segments")
+}
+
 /// Removes a field from a punctuation.
 pub fn remove_punctuated<T: Clone, P: Clone, F: FnMut(&T) -> bool>(
     punct: &Punctuated<T, P>,
