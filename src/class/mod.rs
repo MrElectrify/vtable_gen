@@ -1,16 +1,20 @@
-use std::collections::HashMap;
-
 use convert_case::{Case, Casing};
 use proc_macro2::Ident;
-use quote::{format_ident, quote};
-use syn::{Attribute, FnArg, GenericParam, parse_macro_input, parse_quote, Path, PatType, Token};
-use syn::punctuated::Punctuated;
+use quote::{format_ident, quote, ToTokens};
+use syn::{Attribute, File, FnArg, GenericParam, parse_macro_input, parse_quote, PatType};
 
-use crate::parse::{CppDef, ItemClass, SecondaryBase};
+use crate::class::extractor::AttributeExtractor;
+use crate::class::generic_base::GenericBase;
+use crate::class::secondary_base::SecondaryBase;
+use crate::parse::{CppDef, ItemClass};
+use crate::util::{extract_ident, remove_punctuated};
 
 mod base_access;
 mod bridge;
+mod extractor;
+mod generic_base;
 mod imp;
+mod secondary_base;
 mod stct;
 mod trt;
 mod vtable;
@@ -18,9 +22,52 @@ mod vtable;
 /// Generates the Rust Struct, VTable struct and Virtuals struct.
 pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut def = parse_macro_input!(input as CppDef);
+    let mut output = proc_macro::TokenStream::default();
 
+    // see if there's a generic base replacement
+    if let Some(base_collections) = GenericBase::extract(&mut def.class) {
+        for generic_bases in base_collections {
+            let mut def = def.clone();
+
+            for generic_base in generic_bases {
+                // rename the definition
+                def.class.ident =
+                    format_ident!("{}_{}", def.class.ident, extract_ident(&generic_base.repl));
+
+                // find and rename the base
+                if let Some(base) = def
+                    .class
+                    .bases
+                    .bases
+                    .iter_mut()
+                    .map(|(path, _)| path)
+                    .find(|path| extract_ident(path) == &generic_base.base)
+                {
+                    *base = generic_base.repl.clone();
+                }
+
+                // remove the generic
+                def.class.generics.params =
+                    remove_punctuated(&def.class.generics.params, |param| match param {
+                        GenericParam::Type(ty) => ty.ident != generic_base.base,
+                        _ => false,
+                    });
+            }
+
+            let def = generate_class(def.clone());
+            output.extend([proc_macro::TokenStream::from(def.into_token_stream())]);
+        }
+    } else {
+        let def = generate_class(def);
+        output.extend([proc_macro::TokenStream::from(def.into_token_stream())]);
+    }
+
+    output
+}
+
+fn generate_class(mut def: CppDef) -> File {
     // extract `gen_base`
-    let additional_bases = extract_additional_bases(&mut def.class);
+    let additional_bases = SecondaryBase::extract(&mut def.class).unwrap_or_default();
 
     // extract `no_impl`
     let no_impl = extract_no_impl(&mut def.class.attrs);
@@ -54,14 +101,16 @@ pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let access_helpers = base_access::gen_base_helpers(&def.class);
 
     let output = quote! {
+        #[allow(non_camel_case_types)]
         #stct
         #impl_hooks
+        #[allow(non_camel_case_types)]
         #trt
         #vtable
         #bridge
         #access_helpers
     };
-    output.into()
+    syn::parse(output.into()).expect("failed to generate class")
 }
 
 /// Enforces that each trait parameter is static.
@@ -71,27 +120,6 @@ fn enforce_static(class: &mut ItemClass) {
             ty.bounds.push(parse_quote!('static))
         }
     }
-}
-
-/// Extracts additional bases that are explicitly listed.
-fn extract_additional_bases(class: &mut ItemClass) -> HashMap<Path, Vec<Path>> {
-    // see if there's a `derive` attribute
-    let Some(gen_base_idx) = class
-        .attrs
-        .iter()
-        .position(|attr| attr.path().is_ident("gen_base"))
-    else {
-        return HashMap::new();
-    };
-    let gen_base_attr = class.attrs.remove(gen_base_idx);
-
-    // parse out bases
-    gen_base_attr
-        .parse_args_with(Punctuated::<SecondaryBase, Token![,]>::parse_terminated)
-        .expect("Failed to parse repr")
-        .iter()
-        .map(|expr| (expr.target.clone(), expr.bases.iter().cloned().collect()))
-        .collect()
 }
 
 /// Returns true if trait implementations should be skipped.

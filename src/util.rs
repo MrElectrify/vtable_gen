@@ -4,6 +4,7 @@ use std::iter;
 use itertools::Itertools;
 use proc_macro2::Ident;
 use syn::{Path, PathSegment};
+use syn::punctuated::Punctuated;
 
 use crate::parse::ItemClass;
 
@@ -36,4 +37,18 @@ pub fn extract_ident(path: &Path) -> &Ident {
 
 pub fn last_segment(path: &Path) -> &PathSegment {
     path.segments.last().expect("expected path segments")
+}
+
+/// Removes a field from a punctuation.
+pub fn remove_punctuated<T: Clone, P: Clone, F: FnMut(&T) -> bool>(
+    punct: &Punctuated<T, P>,
+    mut pred: F,
+) -> Punctuated<T, P> {
+    let mut new_punct = Punctuated::new();
+    for item in punct {
+        if pred(item) {
+            new_punct.push_value(item.clone());
+        }
+    }
+    new_punct
 }

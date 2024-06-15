@@ -1,8 +1,8 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::ToTokens;
 use syn::{
-    AngleBracketedGenericArguments, Attribute, braced, bracketed, Field, GenericParam,
-    Generics, ItemImpl, LitInt, parenthesized, parse_quote, Path, Signature, token, Token, Visibility,
+    AngleBracketedGenericArguments, Attribute, braced, Field, GenericParam, Generics, ItemImpl,
+    LitInt, parenthesized, parse_quote, Path, Signature, token, Token, Visibility,
 };
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -10,7 +10,7 @@ use syn::punctuated::Punctuated;
 use crate::util::last_segment;
 
 /// Base classes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BaseClasses {
     pub colon_token: Option<Token![:]>,
     pub bases: Vec<(Path, Option<Token![,]>)>,
@@ -71,7 +71,7 @@ impl Parse for BaseClasses {
 }
 
 /// The body of a class.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClassBody {
     braces: token::Brace,
     pub fields: Punctuated<Field, Token![,]>,
@@ -105,7 +105,7 @@ impl Parse for ClassBody {
 }
 
 /// A total class definition.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ItemClass {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
@@ -154,7 +154,7 @@ impl Parse for ItemClass {
 }
 
 /// A C++ Definition, containing a class and basic implementation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CppDef {
     pub class: ItemClass,
     pub new_impl: Option<ItemImpl>,
@@ -169,31 +169,6 @@ impl Parse for CppDef {
             } else {
                 None
             },
-        })
-    }
-}
-
-/// A secondary base class.
-pub struct SecondaryBase {
-    pub target: Path,
-    pub eq: Token![=],
-    pub bracket: token::Bracket,
-    pub bases: Punctuated<Path, Token![,]>,
-}
-
-impl Parse for SecondaryBase {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let target = input.parse()?;
-        let eq = input.parse()?;
-
-        let contents;
-        let bracket = bracketed!(contents in input);
-
-        Ok(Self {
-            target,
-            eq,
-            bracket,
-            bases: contents.parse_terminated(Path::parse, Token![,])?,
         })
     }
 }
@@ -287,18 +262,6 @@ impl ToTokens for ItemClass {
         self.ident.to_tokens(tokens);
         self.generics.to_tokens(tokens);
         self.body.to_tokens(tokens);
-    }
-}
-
-impl ToTokens for SecondaryBase {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.target.to_tokens(tokens);
-        self.eq.to_tokens(tokens);
-        self.bracket.surround(tokens, |tokens| {
-            for base in &self.bases {
-                base.to_tokens(tokens);
-            }
-        })
     }
 }
 
