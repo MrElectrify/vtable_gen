@@ -94,8 +94,8 @@ fn generate_class(mut def: CppDef) -> File {
     // extract `gen_base`
     let additional_bases = SecondaryBase::extract(&mut def.class).unwrap_or_default();
 
-    // extract `no_impl`
-    let no_impl = extract_no_impl(&mut def.class.attrs);
+    // extract `gen_vtable`
+    let gen_vtable = extract_gen_vtable(&mut def.class.attrs);
 
     // enforces static trait bounds (required for VTable)
     enforce_static(&mut def.class);
@@ -110,14 +110,14 @@ fn generate_class(mut def: CppDef) -> File {
     standardize_virtuals(&mut def.class);
 
     // generate the trait
-    let trt = if !no_impl {
+    let trt = if gen_vtable {
         Some(trt::gen_trait(&def.class))
     } else {
         None
     };
 
     // generate the VTable structure
-    let vtable = vtable::gen_vtable(&def.class, &additional_bases, no_impl);
+    let vtable = vtable::gen_vtable(&def.class, &additional_bases, gen_vtable);
 
     // generate implementation hooks
     let impl_hooks = imp::gen_hooks(&def, &additional_bases);
@@ -147,13 +147,13 @@ fn enforce_static(class: &mut ItemClass) {
     }
 }
 
-/// Returns true if trait implementations should be skipped.
-fn extract_no_impl(attrs: &mut Vec<Attribute>) -> bool {
-    if let Some(no_impl) = attrs
+/// Returns true if vtables and traits should be generated.
+fn extract_gen_vtable(attrs: &mut Vec<Attribute>) -> bool {
+    if let Some(gen_vtable) = attrs
         .iter()
-        .position(|attr| attr.path().is_ident("no_impl"))
+        .position(|attr| attr.path().is_ident("gen_vtable"))
     {
-        attrs.remove(no_impl);
+        attrs.remove(gen_vtable);
         true
     } else {
         false

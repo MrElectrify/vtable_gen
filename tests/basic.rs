@@ -2,6 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Debug, Default)]
+    #[gen_vtable]
     struct Foo {
         a: f32,
 

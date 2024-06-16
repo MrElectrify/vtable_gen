@@ -2,6 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Debug, Default)]
+    #[gen_vtable]
     struct Foo<T: Default> {
         a: T,
 
@@ -24,6 +25,7 @@ impl<T: Default> FooVirtuals<T> for Foo<T> {
 
 cpp_class! {
     #[derive(Debug, Default)]
+    #[gen_vtable]
     struct Bar<const N: u32, U: Default>: Foo<U> {
         b: U
 

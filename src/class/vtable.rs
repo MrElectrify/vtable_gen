@@ -20,7 +20,7 @@ use crate::util::{collect_secondary_bases, extract_ident, last_segment};
 pub fn gen_vtable(
     class: &ItemClass,
     additional_bases: &HashMap<Path, Vec<Path>>,
-    no_impl: bool,
+    gen_vtable: bool,
 ) -> File {
     let virtuals = sort_virtuals(class);
 
@@ -31,7 +31,7 @@ pub fn gen_vtable(
     let mcro = gen_vtable_macro(class, &virtuals);
 
     // generate the vtable static
-    let stc = if !no_impl {
+    let stc = if gen_vtable {
         Some(gen_vtable_static(class, additional_bases))
     } else {
         None

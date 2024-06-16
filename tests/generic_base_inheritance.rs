@@ -2,6 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Debug, Default)]
+    #[gen_vtable]
     struct FooImpl {
         virtual(1) fn foo(&self) -> u32,
     }
@@ -15,8 +16,9 @@ impl FooImplVirtuals for FooImpl {
 
 // currently, we don't support impls. you can do them manually if needed
 cpp_class! {
-    #[impl_generic_base([T = FooImpl])]
     #[derive(Debug, Default)]
+    #[gen_vtable]
+    #[impl_generic_base([T = FooImpl])]
     struct Foo<T>: T {
         a: u32
 
@@ -37,6 +39,7 @@ impl Foo_FooImplVirtuals for Foo_FooImpl {
 }
 
 cpp_class! {
+    #[gen_vtable]
     #[impl_generic_base([T = FooImpl])]
     struct Bar<T>: Foo<T> {
         virtual extern "fastcall" fn bar(&self) -> u32,
