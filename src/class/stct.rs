@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use quote::{format_ident, quote};
-use syn::{
-    Attribute, Field, FieldMutability, FieldValue, File, Meta, parse_quote, Path, Token, Visibility,
-};
+use quote::quote;
+use syn::{Attribute, FieldValue, File, Meta, parse_quote, Path, Token};
 use syn::punctuated::Punctuated;
 
 use crate::class::{imp, make_base_name};
@@ -25,7 +23,8 @@ pub fn gen_struct(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>
     let mut fields = class.body.fields.clone();
     for (idx, (base_ty, _)) in class.bases.bases.iter().enumerate().rev() {
         let base_ident = make_base_name(class.bases.ident(idx).unwrap());
-        fields.insert(0, parse_quote!(#base_ident: #base_ty));
+        // TODO: add visibility specifiers to definitions
+        fields.insert(0, parse_quote!(pub #base_ident: #base_ty));
     }
 
     // add the vtable if there aren't any bases and there are virtuals.
@@ -33,17 +32,7 @@ pub fn gen_struct(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>
         // push the VTable member
         let generic_args = class.generic_args();
         let vtable_ty = make_vtable_ident(ident);
-        fields.insert(
-            0,
-            Field {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                mutability: FieldMutability::None,
-                ident: Some(format_ident!("vfptr")),
-                colon_token: None,
-                ty: parse_quote!(&'static #vtable_ty #generic_args),
-            },
-        )
+        fields.insert(0, parse_quote!(vfptr: &'static #vtable_ty #generic_args));
     }
 
     // non-virtual bases are not supported because we don't have a way

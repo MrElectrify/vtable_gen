@@ -46,7 +46,7 @@ fn layout() {
     );
     assert_eq!(
         std::mem::size_of::<Foo_FooImplVTable>(),
-        std::mem::size_of::<usize>() * 2
+        std::mem::size_of::<usize>() * 4
     );
 }
 
