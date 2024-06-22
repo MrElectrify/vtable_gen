@@ -1,11 +1,13 @@
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{ItemTrait, Path, TraitItemFn};
+use syn::{File, parse_quote, Path, TraitItemFn};
 
+use crate::class::base_prefix;
 use crate::parse::ItemClass;
+use crate::util::last_segment_mut;
 
 /// Generates the virtuals trait for the type.
-pub fn gen_trait(class: &ItemClass) -> ItemTrait {
+pub fn gen_trait(class: &ItemClass) -> File {
     let vis = &class.vis;
     let generics = &class.generics;
     let virtuals_ident = make_virtuals(&class.ident);
@@ -31,18 +33,17 @@ pub fn make_virtuals(ident: &Ident) -> Ident {
 
 /// Collects a list of base trait identifiers.
 fn collect_base_traits(class: &ItemClass) -> Vec<Path> {
+    let prefix = base_prefix();
+
     class
         .bases
         .bases
         .iter()
         .cloned()
         .map(|(mut base, _)| {
-            let segment = base
-                .segments
-                .last_mut()
-                .expect("expected base type segment");
+            let segment = last_segment_mut(&mut base);
             segment.ident = make_virtuals(&segment.ident);
-            base
+            parse_quote!(#prefix #base)
         })
         .collect()
 }

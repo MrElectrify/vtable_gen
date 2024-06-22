@@ -70,14 +70,14 @@ fn impl_deref(class: &ItemClass) -> Option<File> {
     Some(
         syn::parse(
             quote! {
-                impl #generics core::ops::Deref for #ident #generic_args {
+                impl #generics ::core::ops::Deref for #ident #generic_args {
                     type Target = #base_path;
                     fn deref(&self) -> &Self::Target {
                         &self.#base_ident
                     }
                 }
 
-                impl #generics core::ops::DerefMut for #ident #generic_args {
+                impl #generics ::core::ops::DerefMut for #ident #generic_args {
                     fn deref_mut(&mut self) -> &mut Self::Target {
                         &mut self.#base_ident
                     }

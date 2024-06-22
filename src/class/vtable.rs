@@ -3,18 +3,20 @@ use std::collections::{BTreeMap, HashMap};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use syn::{
-    AngleBracketedGenericArguments, Field, FieldMutability, File, ItemConst, ItemImpl, ItemMacro,
-    ItemStruct, parse_quote, Path, PathArguments, Visibility,
+    AngleBracketedGenericArguments, Field, FieldMutability, File, GenericParam, ItemConst,
+    ItemImpl, ItemMacro, ItemStruct, parse_quote, Path, PathArguments, Visibility,
 };
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
-use crate::class::make_base_name;
+use crate::class::{base_prefix, make_base_name};
 use crate::class::trt::make_virtuals;
 use crate::parse::{ItemClass, Virtual};
-use crate::util::{collect_secondary_bases, extract_ident, last_segment};
+use crate::util::{
+    collect_secondary_bases, extract_ident, extract_implementor_generics, last_segment,
+};
 
 /// Generates a VTable for the class.
 pub fn gen_vtable(
@@ -71,39 +73,6 @@ pub fn make_vtable_static(
     parse_quote!(#ident :: #generics :: #vtable_ident)
 }
 
-/// Extracts generics from an implementor.
-fn extract_implementor_generics(class: &ItemClass, base_path: &Path) -> Vec<TokenStream> {
-    let class_generics = class.generic_args();
-
-    // extract the angle bracketed_arguments
-    let def_generics = match &base_path
-        .segments
-        .last()
-        .expect("expected path segment")
-        .arguments
-    {
-        PathArguments::AngleBracketed(def_generics) => def_generics.clone(),
-        _ => parse_quote!(<>),
-    };
-
-    // determine the position of each and extract it out of the parent definition
-    def_generics
-        .args
-        .iter()
-        .map(|base_arg| {
-            class_generics
-                .args
-                .iter()
-                .position(|class_arg| class_arg == base_arg)
-                .map(|idx| {
-                    let ident = format_ident!("def_generic_{idx}");
-                    quote! { $#ident }
-                })
-                .unwrap_or_else(|| base_arg.to_token_stream())
-        })
-        .collect()
-}
-
 /// Generates a macro that populates the VTable for `class`.
 fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemMacro {
     let class_ident = &class.ident;
@@ -119,12 +88,13 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
         .map(|(idx, _)| format_ident!("def_generic_{idx}"))
         .collect_vec();
 
+    let prefix = base_prefix();
     if let Some((high_idx, _)) = virtuals.last_key_value() {
         for idx in 0..=*high_idx {
             // either translate the virtual into a function, or generate an unimplemented virtual
             let (ident, expr): (Ident, TokenStream) = if let Some(virt) = virtuals.get(&idx) {
                 let ident = virt.sig.ident.clone();
-                let stmt = quote!(<$implementor_ty as #virtuals_ident <#($#def_generic_arg_idents),*>>::#ident);
+                let stmt = quote!(<$implementor_ty as #prefix #virtuals_ident <#($#def_generic_arg_idents),*>>::#ident);
 
                 (ident, stmt)
             } else {
@@ -152,6 +122,11 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
         )
     }
 
+    // generate the marker
+    if !class.generics.params.is_empty() {
+        fields.push(parse_quote!(_marker: ::std::marker::PhantomData))
+    }
+
     let macro_ident = make_vtable_macro_ident(class_ident);
     let struct_ident = make_vtable_ident(class_ident);
 
@@ -161,7 +136,7 @@ fn gen_vtable_macro(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> I
             // implementor_ty: The type of the implementor.
             // gen_x: The definition generic at position `x`.
             ($implementor_ty:ty, <#($#def_generic_arg_idents: tt),*>) => {
-                #struct_ident :: <#($#def_generic_arg_idents),*> {
+                #prefix #struct_ident :: <#($#def_generic_arg_idents),*> {
                     #(#fields),*
                 }
             }
@@ -278,12 +253,9 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
     if let Some(base_path) = class.bases.path(0) {
         let base_ident = extract_ident(base_path);
         let base_vtable_ident = make_vtable_ident(base_ident);
-        let base_args = &base_path
-            .segments
-            .last()
-            .expect("expected path segment")
-            .arguments;
+        let base_args = &last_segment(base_path).arguments;
 
+        let prefix = base_prefix();
         fields.insert(
             0,
             Field {
@@ -292,16 +264,28 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
                 mutability: FieldMutability::None,
                 ident: Some(make_base_name(base_ident)),
                 colon_token: None,
-                ty: parse_quote!(#base_vtable_ident #base_args),
+                ty: parse_quote!(#prefix #base_vtable_ident #base_args),
             },
         )
     }
 
     let generics = &class.generics;
+    if !generics.params.is_empty() {
+        let args = generics
+            .params
+            .iter()
+            .filter_map(|arg| match arg {
+                GenericParam::Type(ty) => Some(&ty.ident),
+                _ => None,
+            })
+            .collect_vec();
+        fields.push(parse_quote!(pub _marker: ::std::marker::PhantomData <(#(#args),*)>))
+    }
+
     syn::parse(
         quote! {
             #[repr(C)]
-            #[derive(Debug)]
+            #[derive(Debug, PartialEq, Eq)]
             #vis struct #vtable_ident #generics {
                 #fields
             }

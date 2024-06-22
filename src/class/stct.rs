@@ -32,7 +32,10 @@ pub fn gen_struct(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Path>>
         // push the VTable member
         let generic_args = class.generic_args();
         let vtable_ty = make_vtable_ident(ident);
-        fields.insert(0, parse_quote!(vfptr: &'static #vtable_ty #generic_args));
+        fields.insert(
+            0,
+            parse_quote!(pub vfptr: &'static #vtable_ty #generic_args),
+        );
     }
 
     // non-virtual bases are not supported because we don't have a way
@@ -134,9 +137,10 @@ fn intercept_default(
     let generics = &class.generics;
     let generic_args = class.generic_args();
     let ident = &class.ident;
-    let [impl_fn, default_fn] = &imp::hook_fn(class, default_fn, additional_bases)[..] else {
+    let [impl_fn, default_fn] = &mut imp::hook_fn(class, default_fn, additional_bases)[..] else {
         unreachable!()
     };
+    impl_fn.vis = parse_quote!(pub);
     let output = quote! {
         impl #generics #ident #generic_args {
             #impl_fn

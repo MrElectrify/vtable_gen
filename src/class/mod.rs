@@ -1,12 +1,14 @@
 use convert_case::{Case, Casing};
-use proc_macro2::Ident;
+use darling::FromMeta;
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    Attribute, File, FnArg, GenericArgument, GenericParam, parse_macro_input, parse_quote, PathArguments,
+    File, FnArg, GenericArgument, GenericParam, parse_macro_input, parse_quote, Path, PathArguments,
     PatType, Type,
 };
 
 use crate::class::extractor::AttributeExtractor;
+use crate::class::gen_vtable::GenVTable;
 use crate::class::generic_base::GenericBase;
 use crate::class::secondary_base::SecondaryBase;
 use crate::parse::{CppDef, ItemClass};
@@ -15,12 +17,28 @@ use crate::util::{extract_ident, last_segment_mut, remove_punctuated};
 mod base_access;
 mod bridge;
 mod extractor;
+mod gen_vtable;
 mod generic_base;
 mod imp;
 mod secondary_base;
 mod stct;
 mod trt;
 mod vtable;
+
+const BASE_PREFIX: Option<&str> = option_env!("VTABLE_PREFIX");
+
+/// Returns the base prefix of the class.
+pub fn base_prefix() -> TokenStream {
+    if let Some(base) = BASE_PREFIX
+        .map(Path::from_string)
+        .transpose()
+        .expect("failed to parse base prefix")
+    {
+        quote!(#base::)
+    } else {
+        TokenStream::default()
+    }
+}
 
 /// Generates the Rust Struct, VTable struct and Virtuals struct.
 pub fn cpp_class_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -95,7 +113,7 @@ fn generate_class(mut def: CppDef) -> File {
     let additional_bases = SecondaryBase::extract(&mut def.class).unwrap_or_default();
 
     // extract `gen_vtable`
-    let gen_vtable = extract_gen_vtable(&mut def.class.attrs);
+    let gen_vtable = GenVTable::extract(&mut def.class);
 
     // enforces static trait bounds (required for VTable)
     enforce_static(&mut def.class);
@@ -110,14 +128,14 @@ fn generate_class(mut def: CppDef) -> File {
     standardize_virtuals(&mut def.class);
 
     // generate the trait
-    let trt = if gen_vtable {
+    let trt = if gen_vtable.is_some() {
         Some(trt::gen_trait(&def.class))
     } else {
         None
     };
 
     // generate the VTable structure
-    let vtable = vtable::gen_vtable(&def.class, &additional_bases, gen_vtable);
+    let vtable = vtable::gen_vtable(&def.class, &additional_bases, gen_vtable.is_some());
 
     // generate implementation hooks
     let impl_hooks = imp::gen_hooks(&def, &additional_bases);
@@ -144,19 +162,6 @@ fn enforce_static(class: &mut ItemClass) {
         if let GenericParam::Type(ty) = generic {
             ty.bounds.push(parse_quote!('static))
         }
-    }
-}
-
-/// Returns true if vtables and traits should be generated.
-fn extract_gen_vtable(attrs: &mut Vec<Attribute>) -> bool {
-    if let Some(gen_vtable) = attrs
-        .iter()
-        .position(|attr| attr.path().is_ident("gen_vtable"))
-    {
-        attrs.remove(gen_vtable);
-        true
-    } else {
-        false
     }
 }
 
