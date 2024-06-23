@@ -2,7 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Debug, Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct Foo<const N: u32, T: Default> {
         a: T,
 

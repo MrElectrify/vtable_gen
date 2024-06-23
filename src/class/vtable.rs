@@ -6,7 +6,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
     AngleBracketedGenericArguments, Field, FieldMutability, File, GenericParam, ItemConst,
-    ItemImpl, ItemMacro, ItemStruct, parse_quote, Path, PathArguments, Visibility,
+    ItemImpl, ItemMacro, parse_quote, Path, PathArguments, Visibility,
 };
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
@@ -42,6 +42,7 @@ pub fn gen_vtable(
     syn::parse(
         quote! {
             #vtable
+            #[allow(clippy::crate_in_macro_def)]
             #mcro
             #stc
         }
@@ -212,7 +213,7 @@ fn gen_vtable_static(class: &ItemClass, additional_bases: &HashMap<Path, Vec<Pat
 }
 
 /// Generates the VTable struct for the class.
-fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> ItemStruct {
+fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> File {
     let vis = &class.vis;
     let vtable_ident = make_vtable_ident(&class.ident);
     let mut fields = Punctuated::<Field, Comma>::new();
@@ -240,7 +241,7 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
 
             fields.push(Field {
                 attrs,
-                vis: Visibility::Inherited,
+                vis: parse_quote!(pub),
                 mutability: FieldMutability::None,
                 ident: Some(virt_ident),
                 colon_token: None,
@@ -260,7 +261,7 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
             0,
             Field {
                 attrs: vec![],
-                vis: Visibility::Inherited,
+                vis: parse_quote!(pub),
                 mutability: FieldMutability::None,
                 ident: Some(make_base_name(base_ident)),
                 colon_token: None,
@@ -281,18 +282,22 @@ fn gen_vtable_struct(class: &ItemClass, virtuals: &BTreeMap<usize, Virtual>) -> 
             .collect_vec();
         fields.push(parse_quote!(pub _marker: ::std::marker::PhantomData <(#(#args),*)>))
     }
+    let (impl_generics, ty_generics, _) = generics.split_for_impl();
 
-    syn::parse(
-        quote! {
-            #[repr(C)]
-            #[derive(Debug, PartialEq, Eq)]
-            #vis struct #vtable_ident #generics {
-                #fields
-            }
+    let output = quote! {
+        #[repr(C)]
+        #[derive(Debug)]
+        #vis struct #vtable_ident #generics {
+            #fields
         }
-        .into(),
-    )
-    .expect("failed to generate vtable struct")
+
+        impl #impl_generics PartialEq for #vtable_ident #ty_generics {
+            fn eq(&self, _other: &Self) -> bool { true }
+        }
+
+        impl #impl_generics Eq for #vtable_ident #ty_generics {}
+    };
+    syn::parse(output.into()).expect("failed to generate vtable struct")
 }
 
 /// Organizes the virtuals in index-order.

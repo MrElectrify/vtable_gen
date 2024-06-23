@@ -2,7 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct A {
         a: u32,
 
@@ -24,7 +24,7 @@ impl AVirtuals for A {
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct B {
         b: u32,
 
@@ -46,7 +46,7 @@ impl BVirtuals for B {
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct C: A, B {
         c: u32,
 

@@ -2,7 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     pub struct A {
         pub a: u32,
 

@@ -2,7 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct A<const N: u32> {
         a: u32,
 
@@ -24,7 +24,7 @@ impl<const N: u32> AVirtuals<N> for A<N> {
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct B<T: Default, const O: u32> {
         b: T,
 
@@ -46,7 +46,7 @@ impl<T: Default, const O: u32> BVirtuals<T, O> for B<T, O> {
 
 cpp_class! {
     #[derive(Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct C<const P: u32, U: Default>: A<P>, B<U, P> {
         c: u32,
 
@@ -85,7 +85,7 @@ impl<const P: u32, U: Default> CVirtuals<P, U> for C<P, U> {
 cpp_class! {
     #[derive(Default)]
     #[gen_base(C<Q, u32> = [B<u32, Q>])]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct D<const Q: u32>: C<Q, u32> {
         d: u32,
 

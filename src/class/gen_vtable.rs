@@ -10,7 +10,10 @@ use crate::class::extractor::AttributeExtractor;
 
 #[derive(FromAttributes)]
 #[darling(attributes(gen_vtable))]
-pub struct GenVTable {}
+pub struct GenVTable {
+    #[darling(default)]
+    pub no_unimpl: bool,
+}
 
 impl AttributeExtractor for GenVTable {
     type Output = Self;

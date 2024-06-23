@@ -2,7 +2,7 @@ use vtable_gen::cpp_class;
 
 cpp_class! {
     #[derive(Debug, Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct Foo {
         a: f32,
 
@@ -25,7 +25,7 @@ impl FooVirtuals for Foo {
 
 cpp_class! {
     #[derive(Debug, Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct Bar: Foo {
         b: f32
 
@@ -56,7 +56,7 @@ impl BarVirtuals for Bar {
 
 cpp_class! {
     #[derive(Debug, Default)]
-    #[gen_vtable]
+    #[gen_vtable(no_unimpl)]
     struct Baz: Bar {
         c: f32
 

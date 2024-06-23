@@ -128,8 +128,8 @@ fn generate_class(mut def: CppDef) -> File {
     standardize_virtuals(&mut def.class);
 
     // generate the trait
-    let trt = if gen_vtable.is_some() {
-        Some(trt::gen_trait(&def.class))
+    let trt = if let Some(gen_vtable) = &gen_vtable {
+        Some(trt::gen_trait(&def.class, gen_vtable.no_unimpl))
     } else {
         None
     };
@@ -173,6 +173,7 @@ fn make_base_name(ident: &Ident) -> Ident {
 /// Standardizes the ABI and signatures for virtuals.
 fn standardize_virtuals(class: &mut ItemClass) {
     let generic_args = class.generic_args();
+    let prefix = base_prefix();
     for virt in class.body.virtuals.iter_mut() {
         if virt.sig.abi.is_none() {
             virt.sig.abi = parse_quote!(extern "C");
@@ -187,7 +188,7 @@ fn standardize_virtuals(class: &mut ItemClass) {
                 attrs: vec![],
                 pat: Box::new(parse_quote!(this)),
                 colon_token: Default::default(),
-                ty: Box::new(parse_quote!(&#mutability #class_ident #generic_args)),
+                ty: Box::new(parse_quote!(&#mutability #prefix #class_ident #generic_args)),
             });
         } else {
             panic!("virtuals must take `&self` or `&mut self`")
