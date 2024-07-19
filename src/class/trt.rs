@@ -78,11 +78,16 @@ fn collect_functions(class: &ItemClass) -> Vec<TraitItemFn> {
         .body
         .virtuals
         .iter()
-        .map(|virt| TraitItemFn {
-            attrs: vec![],
-            sig: virt.sig.clone(),
-            default: None,
-            semi_token: None,
+        .map(|virt| {
+            let mut sig = virt.sig.clone();
+            // remove unsafety to keep strict safety for trait implementations
+            sig.unsafety = None;
+            TraitItemFn {
+                attrs: vec![],
+                sig,
+                default: None,
+                semi_token: None,
+            }
         })
         .collect()
 }
@@ -106,6 +111,8 @@ fn gen_unimpl_macro(class: &ItemClass) -> File {
         .iter()
         .map(|virt| {
             let mut sig = virt.sig.clone();
+            // remove the unsafety
+            sig.unsafety = None;
 
             // underscore all args
             for input in &mut sig.inputs {
